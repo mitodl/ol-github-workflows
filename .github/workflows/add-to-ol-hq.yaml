@@ -2,7 +2,7 @@
 on:
   workflow_call:
     secrets:
-      OL_HQ_SECRET:
+      OL_HQ_PROJECT_SECRET:
         required: true
 
 jobs:
@@ -14,7 +14,7 @@ jobs:
     - uses: actions/add-to-project@v0.4.0
       with:
         project-url: https://github.com/orgs/mitodl/projects/21
-        github-token: ${{ secrets.OL_HQ_SECRET }}
+        github-token: ${{ secrets.OL_HQ_PROJECT_SECRET }}
 
   
 
