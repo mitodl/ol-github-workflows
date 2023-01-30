@@ -1,0 +1,23 @@
+---
+on:
+  workflow_call:
+
+
+env:
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  assign_to_ol_hq:
+    runs-on: ubuntu-latest
+    name: Assign New Issues to Open Learning HQ
+    if: github.event.action == 'opened' && github.event.issue
+    steps:
+    - name: Assign NEW issues to OL HQ
+      uses: srggrs/assign-one-project-github-action@4fc2b23bdaaac08e64dcc590a6e138d2f9b8c86e
+      with:
+        project: 'https://github.com/orgs/mitodl/projects/21'
+        column_name: 'Needs Triage'
+
+  
+
+  
