@@ -44,11 +44,15 @@ A migration PR MUST:
    environments until the repository is deselected (§7). ol-data-platform's `dbt-core<1.12`
    pin, which exists for pre-commit.ci's 250 MiB environment cap and also applies to its
    un-skipped `sqlfluff-lint`, is the one known case. It is lifted in §7 step 4.
-2. **Replace the `ci:` block** with the interim block in §7. Keep its existing `skip` list
-   and any `autoupdate_*` keys verbatim: pre-commit.ci's autoupdate keeps running until the
-   repository is deselected, and smoot-design's `autoupdate_commit_msg` keeps those PR titles
-   passing its Conventional Commits check. The block is removed after the repository leaves the pre-commit.ci
-   installation.
+2. **Handle the `ci:` block by installation status** (inventory §5 lists the 14 in-scope
+   repositories in the pre-commit.ci installation):
+   - *In the installation:* replace it with the interim block in §7. Keep its existing
+     `skip` list and any `autoupdate_*` keys verbatim: pre-commit.ci's autoupdate keeps
+     running until the repository is deselected, and smoot-design's `autoupdate_commit_msg`
+     keeps those PR titles passing its Conventional Commits check. The block is removed after
+     the repository leaves the installation.
+   - *Outside it:* delete the block. Nothing reads it today, and five of these repositories
+     still carry one.
 3. **Run every hook in CI, including those in the old `ci: skip` list.** Those hooks never
    ran in pre-commit.ci, and some never ran anywhere (inventory §4.2). The workflow installs
    whatever they need: Node and the repository's JS dependencies, Docker, `packer`. A
@@ -225,7 +229,15 @@ The fix step failing after it starts a fix is the action's own behavior (`setFai
 ## 7. Coexisting with pre-commit.ci, and the per-repository cutover
 
 pre-commit.ci has no way to be switched off from config, but `autofix_prs: false` stops its
-fix pushes while its checks keep reporting. Each repository follows this order:
+fix pushes while its checks keep reporting.
+
+This section applies only to the 14 in-scope repositories in the pre-commit.ci installation
+(inventory §5). For the other 14, pre-commit.ci does nothing today: the migration PR deletes
+the `ci:` block (§2 item 2), step 2 still applies, and steps 1's interim block, 3 and 4 do
+not. The installation's 8 archived repositories are read-only and need nothing before the
+uninstall.
+
+Each repository in the installation follows this order:
 
 1. **Migration PR.** It sets the interim block, keeping the existing `skip` list:
 
@@ -275,8 +287,9 @@ Per repository, in this order:
    removing it deletes the ruleset resource, which the stack creates with `protect=True`
    (`rulesets.py`). Run `pulumi state unprotect` on that resource first, or the apply fails
    and the check stays required.
-2. Restore the repository's pre-migration `ci:` block, including its `skip` list, taken from
-   the migration PR's base. Without the `skip` list, pre-commit.ci tries to run hooks it
+2. In a repository in the pre-commit.ci installation, restore its pre-migration `ci:` block,
+   including its `skip` list, taken from the migration PR's base. (Elsewhere there is
+   nothing to restore.) Without the `skip` list, pre-commit.ci tries to run hooks it
    cannot build. Delete `autofix.yml`. This is a new PR, not a revert: a revert also undoes
    the D4 drift fixes, and after §7 step 4 it no longer applies cleanly. pre-commit.ci
    resumes fix pushes once it merges.
