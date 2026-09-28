@@ -233,8 +233,8 @@ fix pushes while its checks keep reporting.
 
 This section applies only to the 14 in-scope repositories in the pre-commit.ci installation
 (inventory §5). For the other 14, pre-commit.ci does nothing today: the migration PR deletes
-the `ci:` block (§2 item 2), step 2 still applies, and steps 1's interim block, 3 and 4 do
-not. The installation's 8 archived repositories are read-only and need nothing before the
+the `ci:` block (§2 item 2) and step 2 still applies. Step 1's interim block, step 3 and
+step 4 do not. The installation's 8 archived repositories are read-only and need nothing before the
 uninstall.
 
 Each repository in the installation follows this order:
