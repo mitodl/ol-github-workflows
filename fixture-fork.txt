@@ -1,1 +1,1 @@
-fixture: trailing spaces from a fork   
+fixture: trailing spaces from a fork
