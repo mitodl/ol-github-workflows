@@ -1,0 +1,31 @@
+[project]
+name = "ol-github-workflows"
+version = "0"
+description = "Shared GitHub Actions workflows and templates for mitodl repositories"
+requires-python = ">=3.12"
+dependencies = []
+
+[dependency-groups]
+# CI installs only this group (workflow-templates/autofix-uv.yml); `dev` includes it.
+prek = ["prek==0.5.4"]
+dev = [
+  { include-group = "prek" },
+  "pytest>=9,<10",
+  "pyyaml>=6,<7",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "PT", "S", "SIM"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S603", "S607"]
