@@ -1,0 +1,1 @@
+fixture: trailing spaces the hook strips   
