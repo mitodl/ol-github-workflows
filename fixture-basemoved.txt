@@ -1,0 +1,1 @@
+fixture: trailing spaces on a PR whose base moved   
