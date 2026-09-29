@@ -11,8 +11,9 @@ This is the normative contract every repository migration follows. **MUST** and
 explicit reviewer sign-off. **SHOULD** is a default that a PR may depart from, with a stated
 reason.
 
-The reference workflow and playbook that implement this contract are a separate task. §11
-lists what that task has to settle.
+The reference workflow templates in [`workflow-templates/`](../workflow-templates/) and the
+[playbook](prek-autofix-playbook.md) implement this contract. §11 records what that work
+settled.
 
 ---
 
@@ -85,7 +86,7 @@ read it from there:
 
 | Repository kind | Pin | Local install | Local run |
 | --- | --- | --- | --- |
-| Python with `uv` | `prek==X.Y.Z` in the dev dependency group, locked in `uv.lock` | `uv sync` | `uv run prek run --all-files` |
+| Python with `uv` | `prek==X.Y.Z` in a `prek` dependency group that `dev` includes (`{include-group = "prek"}`), locked in `uv.lock` | `uv sync` | `uv run prek run --all-files` |
 | Node | `@j178/prek` exact version in `devDependencies`, locked | `yarn install` / `npm ci` | `npx prek run --all-files` |
 | Neither | `prek-version: X.Y.Z` in the workflow | `uv tool install prek==X.Y.Z` (or brew/standalone, same version) | `prek run --all-files` |
 
@@ -104,7 +105,7 @@ Docs MUST give that command.
 | Checkout | Pinned `actions/checkout`. `persist-credentials: false` in public repositories. Private repositories MUST keep the default (read-only token persisted), because the action runs `git fetch origin <head sha>`, which fails without credentials there. That single zizmor finding is suppressed inline with this reason |
 | Pinning | Every `uses:` is a full 40-character commit SHA with a `# vX.Y.Z` comment. No tags, no branches |
 | Dependencies | Toolchains and prek are installed from lockfiles or exact pins only: `uv sync --frozen`, `yarn install --immutable`, `npm ci`. No floating installs such as `pip install prek` (django-aqueduct does this today). Hook environments are built from the config's `rev`s and `additional_dependencies`, which several configs leave unpinned (for example `pydantic` on ol-data-platform's mypy). That is unchanged from pre-commit.ci and outside a migration PR's scope (§2 item 1). A PR SHOULD NOT loosen them, and a separate PR MAY pin them |
-| prek version | Read from the repository's single pin (§2.1): `uv run --frozen prek` in uv repositories, `npx prek` in Node repositories. `j178/prek-action` with an exact `prek-version` is used only where neither exists |
+| prek version | Read from the repository's single pin (§2.1). uv repositories install only the `prek` group (`uv sync --frozen --only-group prek`), so CI does not build the whole dev environment and uv checks the wheel's hash against `uv.lock`. Node repositories take it from `node_modules/.bin` after the lockfile install. `j178/prek-action` with an exact `prek-version` is used only where neither exists |
 | Concurrency | `group: autofix-${{ github.event.pull_request.number \|\| github.ref }}`, `cancel-in-progress: true` |
 | Timeout | `timeout-minutes` set on the job |
 | Clean-tree guard | Immediately before the first prek pass, `git status --porcelain` is empty. The action stages everything with `git add --all`, untracked files included, so anything a setup step leaves in the tree would otherwise be committed by the bot |
@@ -114,7 +115,8 @@ Docs MUST give that command.
 
 ### 3.2 Sketch
 
-Illustrative only. The reference-workflow task owns the real file and re-resolves the SHAs.
+Illustrative only. The real files are the templates in
+[`workflow-templates/`](../workflow-templates/), which the playbook explains.
 
 ```yaml
 name: autofix.ci  # autofix.ci refuses any other name
@@ -203,13 +205,11 @@ The fix step failing after it starts a fix is the action's own behavior (`setFai
 
 ## 6. Required checks
 
-- The required context is the check name the `prek` job produces, and it is the same in
-  every repository. A copied template produces `prek`. A reusable workflow would produce
-  `<caller job> / <called job>`, which `bin/github-required-checks` cannot score today:
-  `_defines` matches only an exact job name or the matrix form `<name> (`, so `sample`
-  reports such a name as ABSENT, and `drift` fails on it. The reference-workflow task either
-  uses a copied template or extends `_defines` first. It records the final name here before
-  any pilot requires it.
+- The required context is **`prek`** in every repository: the templates are copied, and the
+  job is named `prek`. A reusable workflow would have produced `<caller job> / <called job>`,
+  which `bin/github-required-checks` cannot score: `_defines` matches only an exact job name
+  or the matrix form `<name> (`, so `sample` reports such a name as ABSENT, and `drift` fails
+  on it.
 - Required checks are declared in ol-infrastructure,
   `src/ol_infrastructure/saas/github/repositories/data/repos/<repo>.yaml` under
   `required_status_checks`, and applied by that stack. Nothing is set by hand in the UI.
@@ -272,9 +272,13 @@ keys are removed in step 4 instead, which is what avoids both the gap and duplic
   `helpers:pinGitHubActionDigests`. Renovate keeps digests pinned and bumps them. Nothing to
   add per repository.
 - **prek version:** covered automatically where it is locked (`uv.lock`, `package.json`).
-  Where it lives in a workflow's `prek-version:` input, the preset needs a regex custom
-  manager for that input. That preset change is part of the reference-workflow task, not
-  each repository.
+  Where it lives in a workflow's `prek-version:` input, Renovate's `github-actions` manager
+  updates it natively
+  (renovatebot/renovate
+  [`323dfea8ef`](https://github.com/renovatebot/renovate/commit/323dfea8ef145fc197bacfe26b7bd32f36d9001a),
+  on main since 2026-09-15), as it does `setup-uv`'s `version`. No preset change is needed.
+  No pilot uses the standalone template, so the first repository that does confirms this on
+  its Renovate dashboard.
 - **pre-commit.ci autoupdate** ends when a repository is deselected. Until then it duplicates
   Renovate's hook PRs in 9 repositories, as it does today.
 
@@ -333,14 +337,19 @@ Also record what the autofix.ci app requested at install time.
 - Confirmation that Renovate covers the repository's hooks.
 - For private repositories, that checkout keeps credentials (§3.1).
 
-## 11. Left to the reference-workflow task
+## 11. Settled by the reference workflow
 
-- **Reusable workflow or copied template.** For a reusable workflow, prove that the name
-  check and the server's artifact check still pass. Inside a called workflow,
-  `GITHUB_WORKFLOW` should be the caller's name, but that is not yet verified. Then fix the
-  required check name (§6).
-- The exact prek version, the caching strategy, and the toolchain inputs for Python/uv, Node,
-  Docker and packer.
-- The Renovate preset custom manager for `prek-version:` (§8).
-- Fixture repositories or test PRs that demonstrate every row of §4 and the §5 properties,
-  including concurrency.
+- **Copied template, not a reusable workflow.** A reusable workflow's check name cannot be
+  scored by `bin/github-required-checks` (§6), it would still need a per-repository caller for
+  toolchain steps, and whether `GITHUB_WORKFLOW` inside a called workflow satisfies the
+  action's name check was never verified. The required context is `prek`.
+- **prek 0.5.4**, pinned per §2.1. uv 0.12.20 and Node 24.21.0 are pinned in the templates.
+- **Caching:** `actions/cache` keyed on `.pre-commit-config.yaml` for prek's hook environments
+  in the uv and Node templates, and prek-action's built-in cache in the standalone one.
+  Toolchains for Node, Docker, packer and the project environment are in the playbook §3.
+- **Renovate:** no preset change (§8).
+- **Tests:** `tests/test_templates.py` asserts §3.1 and §5 on every template, and runs the
+  templates' own steps against fixture repositories for every row of §4 except the
+  server-side ones (the cherry-pick, the server being unreachable). The autofix action's
+  decision is emulated from its source. What only a live run can show (the bot's single
+  commit, fork PRs, concurrency cancellation) is the pilots' evidence (§10.1).

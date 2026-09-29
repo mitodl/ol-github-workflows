@@ -11,11 +11,7 @@ jobs:
     name: Assign New Issues to Open Learning HQ
     if: github.event.action == 'opened' && github.event.issue
     steps:
-    - uses: actions/add-to-project@v0.4.0
+    - uses: actions/add-to-project@960fbad431afda394cfcf8743445e741acd19e85 # v0.4.0
       with:
         project-url: https://github.com/orgs/mitodl/projects/21
         github-token: ${{ secrets.OL_HQ_PROJECT_SECRET }}
-
-  
-
-  
