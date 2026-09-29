@@ -123,7 +123,8 @@ def test_every_action_is_pinned_by_sha_with_a_version_comment(template: Path) ->
 
 def test_all_templates_pin_the_same_commit_per_action() -> None:
     pins: dict[str, set[str]] = {}
-    for path in [*TEMPLATES, *(ROOT / ".github" / "workflows").glob("*.yml")]:
+    own = sorted((ROOT / ".github" / "workflows").glob("*.y*ml"))
+    for path in [*TEMPLATES, *own]:
         for line in path.read_text().splitlines():
             if match := USES_LINE.match(line):
                 action, _, sha = match["ref"].partition("@")
