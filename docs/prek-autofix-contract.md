@@ -26,6 +26,7 @@ settled.
 | D3 | Every action is pinned by full commit SHA. Hook `rev:`s stay as tags for now | Repository owner, 2026-09-28 |
 | D4 | Each migration PR fixes its repository's existing hook failures itself. No separate cleanup PR | Repository owner, 2026-09-28 |
 | D5 | pre-commit.ci stays installed during the rollout. Each migration PR switches off its fix pushes (§7), so the two apps never both push to one PR | This contract |
+| D6 | autofix.ci is installed on all 28 in-scope repositories at once, as selected repositories, instead of one repository per migration PR (§5) | Repository owner, 2026-09-30 |
 
 ## 2. Repository changes in a migration PR
 
@@ -198,9 +199,17 @@ The fix step failing after it starts a fix is the action's own behavior (`setFai
   report on the final head commit.
 - **Pinned supply chain.** Action SHAs are pinned (§3.1). Hook environments come from the
   config's `rev`s plus `additional_dependencies`, the same inputs pre-commit.ci used (D3).
-- **App scope.** autofix.ci is installed on selected repositories only, and each repository
-  is added when its migration PR opens. It requests `contents`, `actions`, `pull_requests`
-  and `checks` write, and no `workflows`. The install task records what it actually requests
+- **App scope.** autofix.ci is installed on selected repositories only (D6): the 28
+  in-scope repositories (the pilot, complex and standard waves in inventory §3.1) and
+  ol-github-workflows. Being in the installation does nothing by itself. The app pushes only
+  when the repository runs a workflow named `autofix.ci` that calls the action, so a
+  repository gets fixes from the PR that adds `autofix.yml` onward, and a migration PR needs
+  no installation step. The installation is never switched to all repositories. That would
+  extend the app's write access to every private repository, and to every repository
+  created later, and would stop §9 step 4 from removing a single repository. A repository
+  outside the 28, such as an already-prek repository adopting autofix.ci, is added by an org
+  owner before its PR opens. The app requests `contents`, `actions`, `pull_requests` and
+  `checks` write, and no `workflows`. The install task recorded what it actually requested
   at install time.
 
 ## 6. Required checks
@@ -248,8 +257,8 @@ Each repository in the installation follows this order:
      # any existing autoupdate_* keys, unchanged
    ```
 
-   The PR adds the repository to the autofix.ci installation. On this PR, and on every PR
-   after merge, only autofix.ci pushes fixes. pre-commit.ci keeps validating the other open
+   The repository is already in the autofix.ci installation (§5). On this PR, and on every
+   PR after merge, only autofix.ci pushes fixes. pre-commit.ci keeps validating the other open
    PRs, so there is no validation gap.
 2. **After merge,** the required check is added (§6).
 3. **An org owner deselects** the repository from the pre-commit.ci installation. Its weekly
@@ -300,7 +309,8 @@ Per repository, in this order:
 3. If the repository was already deselected, an org owner re-adds it to the pre-commit.ci
    installation.
 4. Remove the repository from the autofix.ci installation. The prek manifest and doc changes
-   MAY stay, because prek also runs the config locally.
+   MAY stay, because prek also runs the config locally. If the repository migrates again
+   later, an org owner adds it back before that PR opens (§5).
 
 Fleet-wide: do steps 1–3 for every migrated repository before uninstalling autofix.ci.
 Without the app, the fix step fails on every fixable PR.
