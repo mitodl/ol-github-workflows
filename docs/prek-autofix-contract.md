@@ -281,8 +281,9 @@ keys are removed in step 4 instead, which is what avoids both the gap and duplic
 
 - **Hook `rev`s:** Renovate's `pre-commit` manager, enabled by the org preset
   (`mitodl/.github:renovate-config.json`). Every migrated repository MUST extend the preset
-  or enable the manager itself before step 3 of §7. ol-data-platform, alerting-omnibus and
-  superset-marimo do neither today (inventory §4.3).
+  or enable the manager itself before step 3 of §7. The inventory (§4.3) found three
+  repositories doing neither. ol-data-platform has since enabled the manager in its migration
+  PR (#2781), and alerting-omnibus is out of scope (D7), which leaves superset-marimo.
 - **Action SHAs:** the preset extends `config:best-practices`, which includes
   `helpers:pinGitHubActionDigests`. Renovate keeps digests pinned and bumps them. Nothing to
   add per repository.
@@ -306,9 +307,10 @@ Per repository, in this order:
    removing it deletes the ruleset resource, which the stack creates with `protect=True`
    (`rulesets.py`). Run `pulumi state unprotect` on that resource first, or the apply fails
    and the check stays required.
-2. In a repository in the pre-commit.ci installation, restore its pre-migration `ci:` block,
-   including its `skip` list, taken from the migration PR's base. (Elsewhere there is
-   nothing to restore.) Without the `skip` list, pre-commit.ci tries to run hooks it
+2. In a repository that was in the pre-commit.ci installation when it migrated, restore its
+   pre-migration `ci:` block, including its `skip` list, taken from the migration PR's base.
+   This applies even if §7 step 3 has since deselected it, because step 3 below re-adds it.
+   (Elsewhere there is nothing to restore.) Without the `skip` list, pre-commit.ci tries to run hooks it
    cannot build. If §7 step 4 has lifted a pre-commit.ci-only constraint, restore it in the
    same PR. Without ol-data-platform's `dbt-core<1.12`, its un-skipped `sqlfluff-lint`
    environment grows to 277 MiB, over pre-commit.ci's 250 MiB cap. Delete `autofix.yml`. This is a new PR, not a revert: a revert also undoes
