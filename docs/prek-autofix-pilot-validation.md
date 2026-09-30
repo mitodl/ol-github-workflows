@@ -7,8 +7,10 @@
 
 This is the gate between the three pilots and the fleet rollout. It checks what the pilots
 merged against the contract, records what is still open, and lists the per-repository
-exceptions the rollout PRs have to handle. Everything here was re-checked against the
-default branches on 2026-09-30, not copied from the pilot PRs.
+exceptions the rollout PRs have to handle. The merged files, hook results and `prek` job
+timings were re-checked against the default branches and workflow runs on 2026-09-30. The
+pre-commit.ci timings and the fixture-PR results come from the pilots' evidence comments,
+linked below.
 
 | Pilot | Migration PR | Merged | Template | §10.1 evidence |
 | --- | --- | --- | --- | --- |
@@ -49,7 +51,7 @@ this repository's fixture PRs #5–#9. They do not depend on the repository.
 **How rows 1–5 and 13 were checked.** Row 1 diffs `.pre-commit-config.yaml` between each
 migration PR's base and merge commit: the only changes are the interim `ci:` block's
 `autofix_prs: false` and, in ol-infrastructure, one comment. Row 2 reads the per-hook
-results from pass 2 of the first push run on each default branch. ol-infrastructure passes
+results from pass 2 of a post-merge push run on each default branch. ol-infrastructure passes
 19 of 19 hooks, ol-data-platform 16 of 16, and smoot-design 14 of 14, with `check-toml` and
 `debug-statements` reporting "no files to check". Rows 3–5 run this repository's
 `tests/test_templates.py` with each pilot's `autofix.yml` standing in for its template:
@@ -73,14 +75,14 @@ which flatters pre-commit.ci's figures.
 | --- | --- | --- | --- |
 | ol-infrastructure | 76 s, 2 hooks skipped | 120 s | 78–109 s, 4 runs |
 | ol-data-platform | 105 s, `sqlfluff-fix` skipped, after 8 min 25 s queued | 91 s | 116–132 s, 3 runs |
-| smoot-design | 7 s, `eslint` and `prettier` skipped, after 10 min 8 s queued | 108 s | 74 s with the Yarn cache ([#267](https://github.com/mitodl/smoot-design/pull/267)); 88 s on main without it |
+| smoot-design | 7 s, `eslint` and `prettier` skipped, after 10 min 8 s queued | 108 s on the PR; 88 s on main's first push | 74 s with the Yarn cache ([#267](https://github.com/mitodl/smoot-design/pull/267), both caches restored from that PR's earlier run) |
 
-Every warm run above restored main's prek cache on its primary key, and setup took under
-5 s. What remains is the hooks themselves, run twice. Pass 2 is 15–51 s of every run,
-including clean ones, where it repeats a pass that already succeeded. ol-data-platform's warm
-runs are no faster than its cold one because sqlfluff over every SQL file dominates both, and
-runner variance is larger than the cache saving. §4.3 records the pass-2 cost as an option,
-not a defect.
+Every warm run above restored the prek cache on its primary key. Everything outside the two
+prek passes took 13–22 s in the uv repositories and 43 s in smoot-design, most of it
+`yarn install`. The rest is the hooks themselves, run twice. Pass 2 takes 15–51 s of every
+run, including clean ones, where it repeats a pass that already succeeded. ol-data-platform's
+warm runs were no faster than its cold one; both passes took longer, and this gate did not
+isolate why. §4.3 records the pass-2 cost as an option, not a defect.
 
 Against pre-commit.ci the comparison is favorable once queueing is counted: pre-commit.ci
 queued 8–10 minutes on the two lower-traffic pilots, and it skipped the hooks that cost the
@@ -95,7 +97,7 @@ most.
 | Node job spent 61 of 108 s in an uncached `yarn install` | Node template caches Yarn's download cache, keyed on `yarn.lock` (#11). **smoot-design's copy predates it.** Its follow-up is tracked with the smoot-design cutover (contract §7 step 4) |
 | A passing hook can lint nothing (ol-data-platform sqlfluff) | Playbook §2 step 5: seed a violation per linting hook. ol-data-platform's own gap is [#2782](https://github.com/mitodl/ol-data-platform/issues/2782) |
 | `hadolint-docker` runs the untagged image | Playbook §3.3: `docker pull` before measuring. Pinning the image is a hook change, outside migration PRs |
-| PR runs start cold until main saves the cache | Playbook §7. Confirmed fixed by the first push to main in all three pilots |
+| PR runs start cold until main saves the cache | Playbook §7. The first push to main saved the prek cache in all three pilots, and later PR runs in ol-infrastructure and ol-data-platform restored it |
 
 ## 4. Open items
 
@@ -127,8 +129,10 @@ private repository that adopts the workflow later needs the plan decided first.
   needs 20 eligible merged PRs carrying `prek`, and smoot-design needs the owner's
   low-traffic sign-off instead.
 - **Renovate after an autofix commit.** Renovate PRs in ol-infrastructure have run green
-  without needing a fix. None has yet received an `autofix-ci[bot]` commit, for example from
-  `sync-version-pins`, so whether Renovate stops rebasing it (playbook §7) is still unseen.
+  without needing a fix. Across the three pilots, no PR updated since the merges carries an
+  `autofix-ci[bot]` commit apart from the two fixture PRs. So whether Renovate stops
+  rebasing a PR that received one, for example from `sync-version-pins`, is still unseen
+  (playbook §7).
   The behavior matches pre-commit.ci's today, so this does not block the rollout.
 - **Rollback.** Contract §9 is documented, not rehearsed. Its step 1 warning is accurate:
   the required-checks ruleset is created with `protect=True`
@@ -181,7 +185,7 @@ step 5), and report a hook that catches nothing in the PR body.
 | odl-video-service, open-discussions | Default branch is `master` |
 | open-edx-plugins | `uv-lock` rewrites `uv.lock`, so it is a generated-file hook (playbook §3.5) |
 | mitxonline | `ci-gate` is required. D4 drift: actionlint |
-| ol-django | Migrated ahead of the rollout by its maintainers in [#595](https://github.com/mitodl/ol-django/pull/595): uv template, interim `ci:` block, `prek` green. It deviates only in pinning prek 0.5.3 instead of exempting 0.5.4 from `exclude-newer` (playbook §2 step 2), and Renovate converges that. Its workflow passes the same template tests as the uv pilots. It needs only the post-merge steps: contract §6, then §7 steps 3–4 |
+| ol-django | Migrated ahead of the rollout in [#595](https://github.com/mitodl/ol-django/pull/595) (approved, not yet merged, on 2026-09-30): uv template, interim `ci:` block, `prek` green. It deviates only in pinning prek 0.5.3 instead of exempting 0.5.4 from `exclude-newer` (playbook §2 step 2). The PR expects Renovate to bump it once 0.5.4 clears the window. Its workflow passes the same template tests as the uv pilots. It needs only the post-merge steps: contract §6, then §7 steps 3–4 |
 
 ## 6. Verdict
 
