@@ -211,6 +211,10 @@ The fix step failing after it starts a fix is the action's own behavior (`setFai
   owner before its PR opens. The app requests `contents`, `actions`, `pull_requests` and
   `checks` write, and no `workflows`. The install task recorded what it actually requested
   at install time.
+- **Private repositories need a paid plan.** autofix.ci is free for open-source repositories
+  only. On private repositories the fix step fails unless the organization pays for a plan
+  (Pro, for mitodl's size). The pilot validation's §4.1 records the options, and the owner's
+  choice applies to access-forge, alerting-omnibus and hq.
 
 ## 6. Required checks
 

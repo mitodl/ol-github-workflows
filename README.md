@@ -10,6 +10,7 @@ Shared GitHub Actions workflows and workflow templates for mitodl repositories.
 | `workflow-templates/autofix-*.yml` | Reference prek + autofix.ci workflows, copied into each repository as `.github/workflows/autofix.yml` |
 | `docs/prek-autofix-contract.md` | The normative contract every prek + autofix.ci migration PR follows |
 | `docs/prek-autofix-playbook.md` | How to migrate a repository: template choice, checklist, toolchains, pin updates |
+| `docs/prek-autofix-pilot-validation.md` | The gate between the pilots and the rollout: compatibility matrix, open items, per-repository exceptions |
 | `tests/` | Structural and behavioral tests for the templates |
 
 ## Development
