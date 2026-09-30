@@ -43,6 +43,15 @@ Work top to bottom. The contract section is in brackets.
      dev = [{ include-group = "prek" }, ...]  # and remove "pre-commit"
      ```
 
+     If `[tool.uv]` sets `exclude-newer` and the pinned prek is newer than that window,
+     `uv lock` cannot resolve it. Exempt prek alone rather than pinning an older version, as
+     ol-infrastructure does:
+
+     ```toml
+     [tool.uv.exclude-newer-package]
+     prek = "0d"
+     ```
+
    - Node: `yarn add -D -E @j178/prek@0.5.4` (or `npm install -D -E`), and remove
      `pre-commit` from any Python manifest the repository also has.
    - Neither: set `prek-version` in the standalone template.
@@ -53,9 +62,24 @@ Work top to bottom. The contract section is in brackets.
    - private repositories: delete checkout's `with: persist-credentials: false` block, and add
      `# zizmor: ignore[artipacked]` on the `uses:` line with the reason (contract §3.1)
    - toolchains for the local hooks and the old `ci: skip` hooks (§3)
+
+   If the repository runs a YAML formatter (yamlfmt, prettier), it reformats the copy, for
+   example re-indenting it or wrapping the cache key. Run prek locally and commit the
+   formatted file: autofix.ci refuses any fix under `.github/`, so CI would stay red. The
+   parsed YAML is unchanged.
 5. **Make the tree clean** [§2 item 4, D4]: `uv run prek run --all-files` (or `npx prek`)
    until it passes. Commit the autofixes. Fix or narrow what does not autofix, and record
    each narrowing next to the hook and in the PR body.
+
+   A passing hook is not proof that it checked anything. In ol-data-platform, sqlfluff's
+   `ignore = "templating"` turned every file it could not render into a silent pass, so both
+   sqlfluff hooks linted no files
+   ([ol-data-platform#2782](https://github.com/mitodl/ol-data-platform/issues/2782)). For each
+   hook that checks the repository's own code (linters, type checkers, SQL and template
+   linters), seed one obvious violation in a real file and confirm the hook reports it. That
+   includes hooks pre-commit.ci already ran: ol-data-platform's `sqlfluff-lint` was never
+   skipped, and it still linted nothing. A hook that reports nothing is a finding for the PR
+   body, not something to fix in the migration PR.
 6. **Swap the tooling** [§2 item 5]: scripts and CI steps that call `pre-commit` call `prek`;
    README, CONTRIBUTING, AGENTS/CLAUDE files say `prek` and give `prek install -f`.
 7. **Check Renovate coverage** [§8]: the repository extends
@@ -84,13 +108,32 @@ For local `language: node` hooks (prettier, eslint, stylelint) that use the repo
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "24.21.0" # or node-version-file, if the repository pins Node
-      - name: Install JS dependencies from the lockfile
+      - name: Locate the package cache
         run: |
           corepack enable
+          cache="$(yarn config get cacheFolder)"
+          if [ -z "$cache" ] || [ "$cache" = undefined ]; then
+            echo "::error::Could not read the package manager's cache folder (Yarn 1 has none)."
+            exit 1
+          fi
+          echo "PACKAGE_CACHE=$cache" >> "$GITHUB_ENV"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.PACKAGE_CACHE }}
+          key: packages-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('yarn.lock') }}
+      - name: Install JS dependencies from the lockfile
+        run: |
           yarn install --immutable
+          echo "$PWD/node_modules/.bin" >> "$GITHUB_PATH"
 ```
 
-If the JS project is in a subdirectory, add `working-directory:` to the install step.
+These are the Node template's steps. The cache holds Yarn's download cache, keyed on the
+lockfile. In smoot-design it cut `yarn install` from 61 s to 32 s, and the job from 108 s to
+74 s ([smoot-design#267](https://github.com/mitodl/smoot-design/pull/267)). What remains is Yarn
+linking `node_modules`. For npm, use `npm config get cache`, key on `package-lock.json`, and
+run `npm ci`. Do not name the variable `YARN_*`: Yarn reads those as settings and fails on
+names it does not know. If the JS project is in a subdirectory, add `working-directory:` to the
+locate and install steps, and put the subdirectory in `hashFiles`.
 
 ### 3.2 packer
 
@@ -106,6 +149,14 @@ instead (contract §2 item 3).
 ### 3.3 Docker
 
 `hadolint-docker` and `shfmt-docker` need nothing: GitHub-hosted Ubuntu runners have Docker.
+
+`hadolint-docker`'s entry is the untagged `ghcr.io/hadolint/hadolint` image, so it runs
+`:latest` whatever the hook's `rev` says. Run `docker pull ghcr.io/hadolint/hadolint` before
+measuring locally. In ol-infrastructure a cached 2.14.0 passed Dockerfiles that 2.15.1 in CI
+failed. A new hadolint release can also fail the next push to the default branch, and every
+open PR the next time it runs, at the must-converge pass, with no change to any Dockerfile.
+hadolint does not autofix, so autofix.ci cannot repair it. Pinning the image is a hook change,
+so it belongs in a separate PR (contract §2 item 1).
 
 ### 3.4 The project environment
 
@@ -178,6 +229,10 @@ To bump an action manually, for example because a security fix cannot wait for t
 - **Standalone downloads are not checksum-verified.** `j178/prek-action` v3.0.0 carries
   SHA-256s only for prek 0.4.11 and older. The uv and Node templates install prek from a
   lockfile with a verified hash, which is why they are the default.
+- **PR runs start cold.** A `pull_request` run saves caches only to its own ref, and a
+  failed job saves nothing, so the prek and package caches help other PRs only after the
+  first push to the default branch has run the workflow. Expect the migration PR and its
+  fixtures to run cold: 91–120 s in the pilots.
 - **Renovate PRs get autofix commits.** A hook that rewrites files after a bump (for example
   `sync-version-pins`) makes autofix.ci push to Renovate's branch. The pilots record whether
   Renovate then stops rebasing that PR.

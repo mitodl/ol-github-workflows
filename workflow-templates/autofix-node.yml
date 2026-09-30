@@ -29,9 +29,25 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "24.21.0" # ADAPT: use node-version-file if the repository pins Node
-      - name: Install dependencies from the lockfile
+      # Cache the package manager's download cache, not node_modules. Yarn checks each
+      # cached archive against its checksum in yarn.lock and fails the install on a
+      # mismatch (YN0018). A pull_request run saves only to its own ref, and restores its
+      # own ref's cache or else the default branch's.
+      - name: Locate the package cache
         run: |
           corepack enable
+          cache="$(yarn config get cacheFolder)" # ADAPT: `npm config get cache` in npm repositories
+          if [ -z "$cache" ] || [ "$cache" = undefined ]; then
+            echo "::error::Could not read the package manager's cache folder (Yarn 1 has none)."
+            exit 1
+          fi
+          echo "PACKAGE_CACHE=$cache" >> "$GITHUB_ENV"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.PACKAGE_CACHE }}
+          key: packages-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('yarn.lock') }} # ADAPT: package-lock.json in npm repositories
+      - name: Install dependencies from the lockfile
+        run: |
           yarn install --immutable # ADAPT: `npm ci` in npm repositories
           echo "$PWD/node_modules/.bin" >> "$GITHUB_PATH"
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

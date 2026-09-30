@@ -180,6 +180,20 @@ def test_prek_is_pinned_exactly(template: Path) -> None:
         assert re.search(r'node-version: "\d+\.\d+\.\d+"', text)
 
 
+def test_node_template_caches_packages_before_installing() -> None:
+    steps = the_job(load(ROOT / "workflow-templates" / "autofix-node.yml"))["steps"]
+    names = [step.get("name", step.get("uses", "")) for step in steps]
+    locate = names.index("Locate the package cache")
+    install = names.index("Install dependencies from the lockfile")
+    cache = steps[locate + 1]
+    assert locate + 1 < install, "the package cache is restored before the install"
+    assert cache["uses"].startswith("actions/cache@")
+    assert cache["with"]["path"] == "${{ env.PACKAGE_CACHE }}"
+    assert "hashFiles('yarn.lock')" in cache["with"]["key"]
+    # Yarn reads YARN_* variables as settings and fails on names it does not know.
+    assert not any("YARN_" in step.get("run", "") for step in steps)
+
+
 def test_this_repository_runs_the_uv_template() -> None:
     ours = ROOT / ".github" / "workflows" / "autofix.yml"
     assert ours.read_text() == (ROOT / "workflow-templates" / "autofix-uv.yml").read_text()
