@@ -309,7 +309,9 @@ Per repository, in this order:
 2. In a repository in the pre-commit.ci installation, restore its pre-migration `ci:` block,
    including its `skip` list, taken from the migration PR's base. (Elsewhere there is
    nothing to restore.) Without the `skip` list, pre-commit.ci tries to run hooks it
-   cannot build. Delete `autofix.yml`. This is a new PR, not a revert: a revert also undoes
+   cannot build. If §7 step 4 has lifted a pre-commit.ci-only constraint, restore it in the
+   same PR. Without ol-data-platform's `dbt-core<1.12`, its un-skipped `sqlfluff-lint`
+   environment grows to 277 MiB, over pre-commit.ci's 250 MiB cap. Delete `autofix.yml`. This is a new PR, not a revert: a revert also undoes
    the D4 drift fixes, and after §7 step 4 it no longer applies cleanly. pre-commit.ci
    resumes fix pushes once it merges.
 3. If the repository was already deselected, an org owner re-adds it to the pre-commit.ci

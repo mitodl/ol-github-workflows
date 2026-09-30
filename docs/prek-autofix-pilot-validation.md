@@ -106,9 +106,10 @@ most.
 autofix.ci is free for open-source repositories only. Its GitHub Marketplace listing prices
 private repositories on organization accounts at $10/month (Startup, up to 20 users) or
 $50/month (Pro, up to 200 users). mitodl has 38 members, so Pro would be needed. No pilot is
-private, so this was never exercised. On the free plan, a private repository's fix step would
-behave like the "autofix.ci unreachable" row of contract §4. The check itself would still
-work, since it is pass 2's exit status.
+private, so this was never exercised. On the free plan, a private repository's fixable PRs
+would hit the "autofix.ci unreachable" row of contract §4. The check is the job's conclusion,
+so they would stay red until fixed locally. Clean PRs never reach the server and non-fixable
+failures never run the fix step, so those two cases would be unaffected.
 
 The three private in-scope repositories are **access-forge, alerting-omnibus and hq**. On
 2026-09-30 the owner chose to drop them from scope (contract D7), rather than buy Pro or give
@@ -136,7 +137,10 @@ private repository that adopts the workflow later needs the plan decided first.
   The behavior matches pre-commit.ci's today, so this does not block the rollout.
 - **Rollback.** Contract §9 is documented, not rehearsed. Its step 1 warning is accurate:
   the required-checks ruleset is created with `protect=True`
-  (ol-infrastructure `saas/github/repositories/rulesets.py`).
+  (ol-infrastructure `saas/github/repositories/rulesets.py`). This gate fixed step 2, which
+  restored only the `ci:` block. After §7 step 4 lifts ol-data-platform's `dbt-core<1.12`,
+  pre-commit.ci could no longer build `sqlfluff-lint` (277 MiB against a 250 MiB cap). Step 2
+  now restores such constraints too.
 
 ### 4.3 Options, not defects
 
@@ -191,9 +195,17 @@ step 5), and report a hook that catches nothing in the PR body.
 
 The contract and templates hold on all three pilots. No hook was lost, every hook
 pre-commit.ci skipped now runs, and every security property in contract §3.1 and §5 is in
-place in the merged files. No reference-workflow defect remains open. The recommendation is
-to **approve the rollout for the 21 remaining in-scope repositories**, with the §5
-exceptions. That is the 25 in scope under D7, less the three pilots and ol-django.
+place in the merged files. No reference-workflow defect remains open, and the one contract
+defect found (rollback step 2, §4.2) is fixed here. The recommendation is to **approve the
+rollout for the 21 remaining in-scope repositories**, with the §5 exceptions. That is the 25
+in scope under D7, less the three pilots and ol-django.
+
+One accepted exception carries forward. ol-data-platform's two sqlfluff hooks run but lint no
+files ([#2782](https://github.com/mitodl/ol-data-platform/issues/2782)). That gap predates the
+migration: pre-commit.ci's `sqlfluff-lint` linted nothing too. The owner kept it out of #2781,
+and no other in-scope repository runs sqlfluff. Approving the rollout does not close it. Each
+rollout PR's seeded-violation check (playbook §2 step 5) is what keeps the same kind of gap
+from going unnoticed elsewhere.
 
 ## 7. Sign-off
 
