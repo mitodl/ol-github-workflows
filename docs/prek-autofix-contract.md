@@ -355,7 +355,9 @@ Also record what the autofix.ci app requested at install time.
   action's name check was never verified. The required context is `prek`.
 - **prek 0.5.4**, pinned per §2.1. uv 0.12.20 and Node 24.21.0 are pinned in the templates.
 - **Caching:** `actions/cache` keyed on `.pre-commit-config.yaml` for prek's hook environments
-  in the uv and Node templates, and prek-action's built-in cache in the standalone one.
+  in the uv and Node templates, and prek-action's built-in cache in the standalone one. The
+  Node template also caches Yarn's download cache, keyed on `yarn.lock`, and restores it
+  before the lockfile install. Yarn checks each cached archive against its lockfile checksum.
   Toolchains for Node, Docker, packer and the project environment are in the playbook §3.
 - **Renovate:** no preset change (§8).
 - **Tests:** `tests/test_templates.py` asserts §3.1 and §5 on every template, and runs the
