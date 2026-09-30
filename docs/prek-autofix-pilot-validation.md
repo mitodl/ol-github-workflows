@@ -44,7 +44,7 @@ this repository's fixture PRs #5–#9. They do not depend on the repository.
 | 15 | Renovate covers hook `rev`s (contract §8) | ✅ org preset | ⚠ repository config; `additional_dependencies` not covered (§4.3) | ✅ org preset |
 | 16 | Runtime comparable to pre-commit.ci | ✅ §2 | ✅ §2 | ✅ §2 |
 | 17 | Rollback (contract §9) | documented, not exercised | documented, not exercised | documented, not exercised |
-| 18 | Private-repository behavior | not a pilot | not a pilot | not a pilot. ❌ See §4.1 |
+| 18 | Private-repository behavior | not a pilot | not a pilot | not a pilot. Out of scope (§4.1) |
 
 **How rows 1–5 and 13 were checked.** Row 1 diffs `.pre-commit-config.yaml` between each
 migration PR's base and merge commit: the only changes are the interim `ci:` block's
@@ -99,28 +99,27 @@ most.
 
 ## 4. Open items
 
-### 4.1 Private repositories need a paid autofix.ci plan (blocks three rollout PRs)
+### 4.1 Private repositories: dropped from scope (decided)
 
 autofix.ci is free for open-source repositories only. Its GitHub Marketplace listing prices
 private repositories on organization accounts at $10/month (Startup, up to 20 users) or
 $50/month (Pro, up to 200 users). mitodl has 38 members, so Pro would be needed. No pilot is
-private, so this was never exercised. The installation already includes the three private
-in-scope repositories, **access-forge, alerting-omnibus and hq** (D6).
+private, so this was never exercised. On the free plan, a private repository's fix step would
+behave like the "autofix.ci unreachable" row of contract §4. The check itself would still
+work, since it is pass 2's exit status.
 
-Without a paid plan, those repositories' fix step would behave like the "autofix.ci
-unreachable" row of contract §4: red on a fixable PR, fixed locally. The check itself still
-works, since it is pass 2's exit status. Options for the owner:
+The three private in-scope repositories are **access-forge, alerting-omnibus and hq**. On
+2026-09-30 the owner chose to drop them from scope (contract D7), rather than buy Pro or give
+them a check-only workflow. None of them is in the pre-commit.ci installation, so nothing
+enforces their hooks today and dropping them removes no gate. Two follow-ups:
 
-1. **Buy Pro.** The three migrate like any other repository.
-2. **Check only.** Their `autofix.yml` drops the fix step. The `prek` check and the
-   workflow name stay, and fixable drift fails with the diff in the log. These repositories
-   have 2–5 hooks each. This needs a contract exception, recorded in each PR.
-3. **Leave them out.** alerting-omnibus is already an owner-confirmation candidate
-   (inventory §4.11).
+- An org owner removes them from the autofix.ci installation, which D6 had added them to. The
+  app keeps `contents: write` there until then.
+- The inventory in ol-infrastructure moves them to its §6 exclusions, with this decision
+  as the reason.
 
-This gate recommends option 2 unless another private repository adopts the workflow.
-Whatever the owner chooses, the first private rollout PR must still show that checkout
-keeps credentials (contract §3.1). No pilot has shown that live.
+The contract's private-repository branches (§3.1 checkout credentials, §10.2) stay. A
+private repository that adopts the workflow later needs the plan decided first.
 
 ### 4.2 Not yet observable
 
@@ -145,8 +144,8 @@ keeps credentials (contract §3.1). No pilot has shown that live.
   ol-infrastructure, but could leave `ci-gate` cancelled. Keep `false`.
 - **CODEOWNERS for `.github/workflows/`** (contract §5 SHOULD). None of the three pilots has
   a CODEOWNERS file. The org `baseline-default-branch` ruleset requires one approving review
-  on the default branch of every `tier-1` or `standard` repository, and all 28 in-scope
-  repositories are `tier-1`. So workflow edits are reviewed anyway. They are not routed to a
+  on the default branch of every `tier-1` or `standard` repository, and every in-scope
+  repository is `tier-1`. So workflow edits are reviewed anyway. They are not routed to a
   specific owner. This should be a fleet decision rather than a deviation in every PR.
 - **ol-data-platform's `additional_dependencies`.** Renovate's `pre-commit` manager skips
   them where no `language:` is set. That is unchanged from pre-commit.ci, which does not
@@ -177,8 +176,7 @@ step 5), and report a hook that catches nothing in the PR body.
 
 | Repository | Item |
 | --- | --- |
-| access-forge, alerting-omnibus, hq | Private: §4.1 decides the fix step. Checkout keeps credentials |
-| alerting-omnibus, superset-marimo | No Renovate (contract §8). The owner confirms each is still used before a PR is spent (inventory §4.11) |
+| superset-marimo | No Renovate (contract §8). The owner confirms it is still used before a PR is spent (inventory §4.11) |
 | superset-marimo | Config does not load (`ruff-check` at `v0.9.0`). The `rev` fix is allowed by contract §2 item 1 |
 | odl-video-service, open-discussions | Default branch is `master` |
 | open-edx-plugins | `uv-lock` rewrites `uv.lock`, so it is a generated-file hook (playbook §3.5) |
@@ -190,9 +188,8 @@ step 5), and report a hook that catches nothing in the PR body.
 The contract and templates hold on all three pilots. No hook was lost, every hook
 pre-commit.ci skipped now runs, and every security property in contract §3.1 and §5 is in
 place in the merged files. No reference-workflow defect remains open. The recommendation is
-to **approve the rollout for the 21 remaining public in-scope repositories**, with the §5
-exceptions. That is 28 in scope, less the three pilots, ol-django and the three private
-repositories. The private repositories wait for the owner's §4.1 decision.
+to **approve the rollout for the 21 remaining in-scope repositories**, with the §5
+exceptions. That is the 25 in scope under D7, less the three pilots and ol-django.
 
 ## 7. Sign-off
 
