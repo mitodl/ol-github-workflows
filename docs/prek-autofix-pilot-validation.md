@@ -4,6 +4,14 @@
 [`prek-autofix-playbook.md`](prek-autofix-playbook.md)
 **Issue:** [mitodl/ol-infrastructure#5805](https://github.com/mitodl/ol-infrastructure/issues/5805)
 **Status:** proposed 2026-09-30. Sign-off pending (§7).
+**Scope update, 2026-10-01:** contract D8 dropped superset-marimo, ol-rootly-manager and
+ocw_oer_export after this gate was written. The rollout it recommends (§6) is therefore 18
+repositories, not 21, and the §5 row for ol-rootly-manager and the §5.1 rows for
+superset-marimo no longer apply. Of the §4.1 follow-ups, the first is done: an org owner
+removed all six dropped repositories from the autofix.ci installation on 2026-10-01. The
+second, the inventory move, is
+[ol-infrastructure#6125](https://github.com/mitodl/ol-infrastructure/pull/6125). The rest of
+this record is unchanged.
 
 This is the gate between the three pilots and the fleet rollout. It checks what the pilots
 merged against the contract, records what is still open, and lists the per-repository

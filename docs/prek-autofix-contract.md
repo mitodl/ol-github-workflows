@@ -28,6 +28,7 @@ settled.
 | D5 | pre-commit.ci stays installed during the rollout. Each migration PR switches off its fix pushes (§7), so the two apps never both push to one PR | This contract |
 | D6 | autofix.ci is installed on all 28 in-scope repositories at once, as selected repositories, instead of one repository per migration PR (§5) | Repository owner, 2026-09-30 |
 | D7 | The three private in-scope repositories, access-forge, alerting-omnibus and hq, are dropped from scope. autofix.ci is paid on private repositories (§5). That leaves 25 in scope | Repository owner, 2026-09-30 |
+| D8 | Three more repositories are dropped from scope: superset-marimo and ol-rootly-manager, which are being archived, and ocw_oer_export. ocw_oer_export is in the pre-commit.ci installation, so its hook enforcement ends at the uninstall; the owner accepts that. That leaves 22 in scope, 13 of them in the pre-commit.ci installation. An org owner removed all six repositories dropped under D7 and D8 from the autofix.ci installation on 2026-10-01 | Repository owner, 2026-10-01 |
 
 ## 2. Repository changes in a migration PR
 
@@ -47,15 +48,15 @@ A migration PR MUST:
    environments until the repository is deselected (§7). ol-data-platform's `dbt-core<1.12`
    pin, which exists for pre-commit.ci's 250 MiB environment cap and also applies to its
    un-skipped `sqlfluff-lint`, is the one known case. It is lifted in §7 step 4.
-2. **Handle the `ci:` block by installation status** (inventory §5 lists the 14 in-scope
-   repositories in the pre-commit.ci installation):
+2. **Handle the `ci:` block by installation status** (inventory §5 lists the in-scope
+   repositories in the pre-commit.ci installation: 14 at measurement, 13 after D8):
    - *In the installation:* replace it with the interim block in §7. Keep its existing
      `skip` list and any `autoupdate_*` keys verbatim: pre-commit.ci's autoupdate keeps
      running until the repository is deselected, and smoot-design's `autoupdate_commit_msg`
      keeps those PR titles passing its Conventional Commits check. The block is removed after
      the repository leaves the installation.
-   - *Outside it:* delete the block. Nothing reads it today, and five of these repositories
-     still carry one.
+   - *Outside it:* delete the block. Nothing reads it today. Five of these repositories
+     carried one at measurement, four of them still in scope after D8.
 3. **Run every hook in CI, including those in the old `ci: skip` list.** Those hooks never
    ran in pre-commit.ci, and some never ran anywhere (inventory §4.2). The workflow installs
    whatever they need: Node and the repository's JS dependencies, Docker, `packer`. A
@@ -200,7 +201,7 @@ The fix step failing after it starts a fix is the action's own behavior (`setFai
   report on the final head commit.
 - **Pinned supply chain.** Action SHAs are pinned (§3.1). Hook environments come from the
   config's `rev`s plus `additional_dependencies`, the same inputs pre-commit.ci used (D3).
-- **App scope.** autofix.ci is installed on selected repositories only (D6, D7): the 25
+- **App scope.** autofix.ci is installed on selected repositories only (D6–D8): the 22
   in-scope repositories (the pilot, complex and standard waves in inventory §3.1) and
   ol-github-workflows. Being in the installation does nothing by itself. The app pushes only
   when the repository runs a workflow named `autofix.ci` that calls the action, so a
@@ -208,14 +209,14 @@ The fix step failing after it starts a fix is the action's own behavior (`setFai
   no installation step. The installation is never switched to all repositories. That would
   extend the app's write access to every private repository, and to every repository
   created later, and would stop §9 step 4 from removing a single repository. A repository
-  outside the 25, such as an already-prek repository adopting autofix.ci, is added by an org
+  outside the 22, such as an already-prek repository adopting autofix.ci, is added by an org
   owner before its PR opens. The app requests `contents`, `actions`, `pull_requests` and
   `checks` write, and no `workflows`. The install task recorded what it actually requested
   at install time.
 - **Private repositories need a paid plan.** autofix.ci is free for open-source repositories
   only. On private repositories the fix step fails unless the organization pays for a plan
   (Pro, for mitodl's size). That is why D7 drops the three private repositories. They were
-  added to the installation under D6, and an org owner removes them. A private repository
+  added to the installation under D6, and an org owner removed them on 2026-10-01. A private repository
   that adopts this workflow later needs the plan decided first.
 
 ## 6. Required checks
@@ -246,8 +247,10 @@ The fix step failing after it starts a fix is the action's own behavior (`setFai
 pre-commit.ci has no way to be switched off from config, but `autofix_prs: false` stops its
 fix pushes while its checks keep reporting.
 
-This section applies only to the 14 in-scope repositories in the pre-commit.ci installation
-(inventory §5). For the other 11, pre-commit.ci does nothing today: the migration PR deletes
+This section applies only to the 13 in-scope repositories in the pre-commit.ci installation
+(inventory §5, less ocw_oer_export under D8). ocw_oer_export needs no step here: it stays
+in the installation until the uninstall. For the other 9 in-scope repositories,
+pre-commit.ci does nothing today: the migration PR deletes
 the `ci:` block (§2 item 2) and step 2 still applies. Step 1's interim block, step 3 and
 step 4 do not. The installation's 8 archived repositories are read-only and need nothing before the
 uninstall.
@@ -283,7 +286,8 @@ keys are removed in step 4 instead, which is what avoids both the gap and duplic
   (`mitodl/.github:renovate-config.json`). Every migrated repository MUST extend the preset
   or enable the manager itself before step 3 of §7. The inventory (§4.3) found three
   repositories doing neither. ol-data-platform has since enabled the manager in its migration
-  PR (#2781), and alerting-omnibus is out of scope (D7), which leaves superset-marimo.
+  PR (#2781), alerting-omnibus is out of scope (D7), and superset-marimo is out of scope
+  (D8), so every in-scope repository is covered.
 - **Action SHAs:** the preset extends `config:best-practices`, which includes
   `helpers:pinGitHubActionDigests`. Renovate keeps digests pinned and bumps them. Nothing to
   add per repository.

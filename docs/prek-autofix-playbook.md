@@ -84,7 +84,7 @@ Work top to bottom. The contract section is in brackets.
    README, CONTRIBUTING, AGENTS/CLAUDE files say `prek` and give `prek install -f`.
 7. **Check Renovate coverage** [§8]: the repository extends
    `local>mitodl/.github:renovate-config` or enables the `pre-commit` manager itself.
-8. **Check the autofix.ci installation** (contract §5). The 25 in-scope repositories are
+8. **Check the autofix.ci installation** (contract §5). The 22 in-scope repositories are
    already in it, unless a rollback removed one (contract §9 step 4). Any other repository
    needs an org owner to add it before the PR opens, or the fix step fails on every fixable
    PR. Only an org owner can see the installation's repository list, so if the first fixable
