@@ -145,7 +145,7 @@ jobs:
       - uses: j178/prek-action@4e14d07f9231acabce116ccfca13b13dd9755ece # v3.0.0
         with:
           install-only: true
-          prek-version: 0.5.4
+          prek-version: 0.5.3
       # Toolchain for local hooks goes here, lockfile-only (uv sync --frozen, yarn install --immutable).
       - name: Tree is clean before hooks run
         run: test -z "$(git status --porcelain)"
@@ -363,7 +363,7 @@ Also record what the autofix.ci app requested at install time.
   scored by `bin/github-required-checks` (§6), it would still need a per-repository caller for
   toolchain steps, and whether `GITHUB_WORKFLOW` inside a called workflow satisfies the
   action's name check was never verified. The required context is `prek`.
-- **prek 0.5.4**, pinned per §2.1. uv 0.12.20 and Node 24.21.0 are pinned in the templates.
+- **prek 0.5.3**, pinned per §2.1 (downgraded from 0.5.4 on 2026-10-01 at the owner's request). uv 0.12.20 and Node 24.21.0 are pinned in the templates.
 - **Caching:** `actions/cache` keyed on `.pre-commit-config.yaml` for prek's hook environments
   in the uv and Node templates, and prek-action's built-in cache in the standalone one. The
   Node template also caches Yarn's download cache, keyed on `yarn.lock`, and restores it

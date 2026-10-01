@@ -39,7 +39,7 @@ Work top to bottom. The contract section is in brackets.
 
      ```toml
      [dependency-groups]
-     prek = ["prek==0.5.4"]
+     prek = ["prek==0.5.3"]
      dev = [{ include-group = "prek" }, ...]  # and remove "pre-commit"
      ```
 
@@ -52,7 +52,7 @@ Work top to bottom. The contract section is in brackets.
      prek = "0d"
      ```
 
-   - Node: `yarn add -D -E @j178/prek@0.5.4` (or `npm install -D -E`), and remove
+   - Node: `yarn add -D -E @j178/prek@0.5.3` (or `npm install -D -E`), and remove
      `pre-commit` from any Python manifest the repository also has.
    - Neither: set `prek-version` in the standalone template.
 3. **Handle `ci:`** [§2 item 2]. In the installation: replace the block with the interim block
