@@ -55,8 +55,8 @@ A migration PR MUST:
      running until the repository is deselected, and smoot-design's `autoupdate_commit_msg`
      keeps those PR titles passing its Conventional Commits check. The block is removed after
      the repository leaves the installation.
-   - *Outside it:* delete the block. Nothing reads it today, and five of these repositories
-     still carry one.
+   - *Outside it:* delete the block. Nothing reads it today. Five of these repositories
+     carried one at measurement, four of them still in scope after D8.
 3. **Run every hook in CI, including those in the old `ci: skip` list.** Those hooks never
    ran in pre-commit.ci, and some never ran anywhere (inventory §4.2). The workflow installs
    whatever they need: Node and the repository's JS dependencies, Docker, `packer`. A
