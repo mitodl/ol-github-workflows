@@ -231,10 +231,12 @@ The fix step failing after it starts a fix is the action's own behavior (`setFai
   `required_status_checks`, and applied by that stack. Nothing is set by hand in the UI.
 - A repository's context is added only after its migration PR has merged, in an
   ol-infrastructure PR that declares it in the repository's YAML. Before that PR applies:
-  - `uv run bin/github-required-checks sample <repo> --prs 40` marks it SAFE on at least 20
-    eligible merged PRs. (That file's own evidence is that 20 sampled PRs are not enough to
-    clear a name.) A low-traffic repository that cannot reach 20 within 30 days needs the
-    owner's explicit sign-off, recorded in the PR.
+  - `uv run bin/github-required-checks sample <repo> --prs 40` marks it SAFE on at least one
+    eligible merged PR. `SAFE` means the context was produced on every sampled PR that
+    defined the job and ran its workflow, and the workflow is not path-filtered; it does not
+    report the check's conclusion. Confirm that at least one such PR has a successful `prek`
+    conclusion (for example, `gh pr checks <number> --repo mitodl/<repo>`). One clean eligible
+    run is sufficient; the owner will monitor for problems after rollout.
   - `uv run bin/github-required-checks blocked <repo>` is run **on that branch**, after the
     YAML declares the context. `blocked` reads only declared contexts, so run earlier it
     checks nothing and exits 0. It must name no open PR. PRs branched before the migration

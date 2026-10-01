@@ -135,8 +135,9 @@ private repository that adopts the workflow later needs the plan decided first.
 ### 4.2 Not yet observable
 
 - **Required checks (contract §6).** These are tracked per pilot as cutover tasks. `sample`
-  needs 20 eligible merged PRs carrying `prek`, and smoot-design needs the owner's
-  low-traffic sign-off instead.
+  must report `prek` SAFE on at least one eligible merged PR, and `gh pr checks` must show
+  a successful `prek` conclusion on an eligible PR. The owner will monitor for problems
+  after rollout.
 - **Renovate after an autofix commit.** Renovate PRs in ol-infrastructure have run green
   without needing a fix. Across the three pilots, no PR updated since the merges carries an
   `autofix-ci[bot]` commit apart from the two fixture PRs. So whether Renovate stops
