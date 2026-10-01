@@ -7,7 +7,7 @@ dependencies = []
 
 [dependency-groups]
 # CI installs only this group (workflow-templates/autofix-uv.yml); `dev` includes it.
-prek = ["prek==0.5.4"]
+prek = ["prek==0.5.3"]
 dev = [
   { include-group = "prek" },
   "pytest>=9,<10",
