@@ -29,6 +29,7 @@ settled.
 | D6 | autofix.ci is installed on all 28 in-scope repositories at once, as selected repositories, instead of one repository per migration PR (§5) | Repository owner, 2026-09-30 |
 | D7 | The three private in-scope repositories, access-forge, alerting-omnibus and hq, are dropped from scope. autofix.ci is paid on private repositories (§5). That leaves 25 in scope | Repository owner, 2026-09-30 |
 | D8 | Three more repositories are dropped from scope: superset-marimo and ol-rootly-manager, which are being archived, and ocw_oer_export. ocw_oer_export is in the pre-commit.ci installation, so its hook enforcement ends at the uninstall; the owner accepts that. That leaves 22 in scope, 13 of them in the pre-commit.ci installation. An org owner removed all six repositories dropped under D7 and D8 from the autofix.ci installation on 2026-10-01 | Repository owner, 2026-10-01 |
+| D9 | Supersedes part of D8, and §7 steps 3 and 4. ocw_oer_export is back in scope and is migrated: 23 repositories. Its earlier exclusion, and the accepted end of its hook enforcement, no longer apply. An org owner uninstalled pre-commit.ci from the whole organization on 2026-10-01 instead of deselecting repositories one at a time, so the per-repository deselect no longer exists. The interim `ci:` blocks in the installation repositories are now inert and are removed in a later cleanup PR. Required checks are not gated on open PRs that predate a repository's migration (§6) | Repository owner, 2026-10-01 |
 
 ## 2. Repository changes in a migration PR
 
@@ -239,8 +240,10 @@ The fix step failing after it starts a fix is the action's own behavior (`setFai
     run is sufficient; the owner will monitor for problems after rollout.
   - `uv run bin/github-required-checks blocked <repo>` is run **on that branch**, after the
     YAML declares the context. `blocked` reads only declared contexts, so run earlier it
-    checks nothing and exits 0. It must name no open PR. PRs branched before the migration
-    do not contain the workflow and would hang until rebased.
+    checks nothing and exits 0. PRs branched before the migration
+    do not contain the workflow and will show `prek` as pending until their branches are
+    updated. `blocked` lists them. Per the owner decision of 2026-10-01 (D9), that list does
+    not gate the cutover, because those PRs were already checked by pre-commit.ci.
 - Existing required checks (`ci-gate`, `openapi-diff`, `fast-checks`, `gate`, `test`) stay.
   None of them names pre-commit.ci (inventory §4.9), so nothing needs removing.
 
@@ -249,9 +252,11 @@ The fix step failing after it starts a fix is the action's own behavior (`setFai
 pre-commit.ci has no way to be switched off from config, but `autofix_prs: false` stops its
 fix pushes while its checks keep reporting.
 
-This section applies only to the 13 in-scope repositories in the pre-commit.ci installation
-(inventory §5, less ocw_oer_export under D8). ocw_oer_export needs no step here: it stays
-in the installation until the uninstall. For the other 9 in-scope repositories,
+This section applies only to the 14 in-scope repositories in the pre-commit.ci installation
+(inventory §5). D9 supersedes steps 3 and 4 below: pre-commit.ci was uninstalled from the
+organization on 2026-10-01, so no repository is deselected one at a time, and the interim
+`ci:` blocks are removed in a later cleanup. ocw_oer_export is covered by D9 and follows the
+steps that still apply. For the other 9 in-scope repositories,
 pre-commit.ci does nothing today: the migration PR deletes
 the `ci:` block (§2 item 2) and step 2 still applies. Step 1's interim block, step 3 and
 step 4 do not. The installation's 8 archived repositories are read-only and need nothing before the
