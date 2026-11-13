@@ -1,7 +1,9 @@
 # uv.lock revision check contract
 
 What `workflow-templates/uv-lock-revision.yml` guarantees, and what a repository adopting
-it has to do. Normative; `tests/test_uv_lock_revision.py` asserts every structural claim.
+it has to do. Normative. `tests/test_uv_lock_revision.py` asserts every structural claim except the
+pin consistency in §3.5, which `tests/test_templates.py` asserts across every template
+at once.
 
 ## 1. The problem
 
@@ -73,8 +75,10 @@ looking.
    runs a `git` command that reaches the network.
 7. The only action used is `actions/checkout`, and no step invokes `uv`. The check reads
    the file; it must not be able to relock anything.
-8. Every `uv.lock` tracked by git is checked, found with `git ls-files -z '*uv.lock'`, so a
-   workspace with many lockfiles needs no extra configuration.
+8. Every tracked path ending in `uv.lock` is checked, found with
+   `git ls-files -z '*uv.lock'`, so a workspace with many lockfiles needs no extra
+   configuration. The pathspec crosses `/` and matches a non-empty prefix, so a stray
+   `notuv.lock` would be checked too -- it errs toward checking more, not less.
 9. A repository with no `uv.lock` fails the check rather than passing vacuously.
 
 ## 4. Adoption
@@ -95,7 +99,7 @@ it already has, so there is nothing for a credential to buy.
 Read the current value rather than assuming it:
 
 ```console
-$ grep -h '^revision = ' $(git ls-files '*uv.lock') | sort -u
+$ git ls-files -z '*uv.lock' | xargs -0 grep -h '^revision = ' | sort -u
 revision = 5
 ```
 

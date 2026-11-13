@@ -27,13 +27,15 @@ from workflow_contract import (
     action_pins,
     assert_checkout_does_not_persist_credentials,
     assert_every_action_is_pinned,
+    assert_read_only_permissions,
+    assert_triggers,
     load,
 )
 
 TEMPLATES = sorted((ROOT / "workflow-templates").glob("autofix-*.yml"))
 TEMPLATE_IDS = [path.stem for path in TEMPLATES]
-# Every template, autofix or not: the pin invariant spans all of them.
-ALL_TEMPLATES = sorted((ROOT / "workflow-templates").glob("*.yml"))
+# Every template, autofix or not, .yml or .yaml: the pin invariant spans all of them.
+ALL_TEMPLATES = sorted((ROOT / "workflow-templates").glob("*.y*ml"))
 AUTOFIX_ACTION = "autofix-ci/action"
 # Steps after the toolchain setup; identical in every template (test_shared_steps_match).
 SHARED_STEP_IDS = ["clean-tree", "fixing-pass", "converge", "no-drift", "autofix"]
@@ -68,17 +70,12 @@ def test_workflow_name_is_autofix_ci(template: Path) -> None:
 
 
 def test_triggers(template: Path) -> None:
-    on = load(template)["on"]
-    assert set(on) == {"pull_request", "push"}
-    assert on["pull_request"] is None, "no branch filter: every PR runs the check"
-    assert list(on["push"]) == ["branches"], "push runs on the default branch only"
-    assert len(on["push"]["branches"]) == 1
+    assert_triggers(load(template)["on"])
 
 
 def test_permissions_are_read_only(template: Path) -> None:
     workflow = load(template)
-    assert workflow["permissions"] == {"contents": "read"}
-    assert "permissions" not in the_job(workflow), "no job widens the token"
+    assert_read_only_permissions(workflow, the_job(workflow))
 
 
 def test_no_privileged_triggers_secrets_or_skips(template: Path) -> None:
@@ -121,7 +118,7 @@ def test_all_templates_pin_the_same_commit_per_action() -> None:
     pins: dict[str, set[str]] = {}
     own = sorted((ROOT / ".github" / "workflows").glob("*.y*ml"))
     for path in [*ALL_TEMPLATES, *own]:
-        for action, sha in action_pins(path).items():
+        for action, sha in action_pins(path):
             pins.setdefault(action, set()).add(sha)
     assert {action: shas for action, shas in pins.items() if len(shas) > 1} == {}
 

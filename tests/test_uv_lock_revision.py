@@ -10,6 +10,7 @@ script that actually ships rather than a copy of it.
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -18,6 +19,8 @@ from workflow_contract import (
     ROOT,
     assert_checkout_does_not_persist_credentials,
     assert_every_action_is_pinned,
+    assert_read_only_permissions,
+    assert_triggers,
     load,
 )
 
@@ -41,17 +44,12 @@ def test_template_exists() -> None:
 
 
 def test_triggers() -> None:
-    on = load(TEMPLATE)["on"]
-    assert set(on) == {"pull_request", "push"}
-    assert on["pull_request"] is None, "no branch filter: every PR runs the check"
-    assert list(on["push"]) == ["branches"], "push runs on the default branch only"
-    assert len(on["push"]["branches"]) == 1
+    assert_triggers(load(TEMPLATE)["on"])
 
 
 def test_permissions_are_read_only() -> None:
     workflow = load(TEMPLATE)
-    assert workflow["permissions"] == {"contents": "read"}
-    assert "permissions" not in the_job(workflow), "the job does not widen the token"
+    assert_read_only_permissions(workflow, the_job(workflow))
 
 
 def test_no_privileged_triggers_secrets_or_skips() -> None:
@@ -75,12 +73,24 @@ def test_job_is_the_required_check() -> None:
     assert 0 < job["timeout-minutes"] <= 60
 
 
-def test_expected_revision_is_the_single_adapt_knob() -> None:
+def test_the_adapt_lines_are_exactly_the_two_the_contract_lists() -> None:
+    """Asserted as a set, not a membership test.
+
+    `persist-credentials` deliberately carries no ADAPT marker -- unlike the autofix
+    templates, nothing here runs a networked `git` command -- and a membership test would
+    not notice one being added back.
+    """
     job = the_job(load(TEMPLATE))
     assert list(job["env"]) == ["EXPECTED_REVISION"]
     assert str(job["env"]["EXPECTED_REVISION"]).isdigit()
-    adapts = [line for line in TEMPLATE.read_text().splitlines() if "ADAPT" in line]
-    assert any("EXPECTED_REVISION" in line for line in adapts), "the revision is marked ADAPT"
+    adapts = [
+        line.split("# ADAPT:")[0].strip()
+        for line in TEMPLATE.read_text().splitlines()
+        if "# ADAPT:" in line
+    ]
+    assert len(adapts) == 2, adapts
+    assert any(line.startswith("branches:") for line in adapts), adapts
+    assert any(line.startswith("EXPECTED_REVISION:") for line in adapts), adapts
 
 
 def test_needs_no_toolchain() -> None:
@@ -106,6 +116,32 @@ def test_every_action_is_pinned_by_sha_with_a_version_comment() -> None:
 
 def test_checkout_does_not_persist_credentials() -> None:
     assert_checkout_does_not_persist_credentials(the_job(load(TEMPLATE)))
+
+
+ADOPTED = ROOT / ".github" / "workflows" / "uv-lock-revision.yml"
+REVISION_LINE = re.compile(r'^(\s*EXPECTED_REVISION:\s*)"?\d+"?', re.M)
+
+
+def test_this_repository_runs_the_template_verbatim() -> None:
+    """The adopted copy may differ from the template at EXPECTED_REVISION and nowhere else.
+
+    test_templates.py asserts byte-equality for the autofix family. This one cannot, because
+    the adopted copy carries this repository's own revision -- but everything else, including
+    the permissions and the exit status, has to match or adopting proves nothing.
+    """
+
+    def normalized(path: Path) -> str:
+        return REVISION_LINE.sub(r"\1<REVISION>", path.read_text())
+
+    assert normalized(ADOPTED) == normalized(TEMPLATE)
+
+
+def test_the_adopted_copy_expects_this_repositorys_revision() -> None:
+    expected = the_job(load(ADOPTED))["env"]["EXPECTED_REVISION"]
+    locks = (ROOT / "uv.lock").read_text()
+    actual = re.search(r"^revision = (\d+)", locks, re.M)
+    assert actual, "uv.lock has no revision key"
+    assert str(expected) == actual.group(1)
 
 
 def run_check(tmp_path: Path, lockfiles: dict[str, int | None], expected: str = "5"):
@@ -166,6 +202,53 @@ def test_fails_when_the_repository_has_no_lockfile(tmp_path: Path) -> None:
     result = run_check(tmp_path, {"README.md": None})
     assert result.returncode == 1
     assert "no uv.lock found" in result.stdout
+
+
+def run_raw(tmp_path: Path, body: bytes, expected: str = "5", unlink: bool = False):
+    """As run_check, but writing the lockfile byte-for-byte: line endings and spacing matter."""
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    lock = tmp_path / "uv.lock"
+    lock.write_bytes(body)
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    if unlink:
+        lock.unlink()
+    return subprocess.run(
+        ["bash", "-c", check_script()],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        env={**os.environ, "EXPECTED_REVISION": expected},
+        check=False,
+    )
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        pytest.param(b"version = 1\nrevision = 5\n", id="plain"),
+        pytest.param(b"version = 1\r\nrevision = 5\r\n", id="crlf"),
+        pytest.param(b"version = 1\nrevision = 5   \n", id="trailing-spaces"),
+        pytest.param(b"version = 1\nrevision=5\n", id="no-spaces"),
+        pytest.param(b"version = 1\nrevision  =  5\n", id="wide-spacing"),
+    ],
+)
+def test_reads_the_revision_whatever_the_spacing(tmp_path: Path, body: bytes) -> None:
+    """A mismatch the eye cannot see -- "revision is 5, expected 5" -- is worse than no check."""
+    assert run_raw(tmp_path, body).returncode == 0
+
+
+def test_crlf_does_not_mask_a_real_drift(tmp_path: Path) -> None:
+    result = run_raw(tmp_path, b"version = 1\r\nrevision = 3\r\n")
+    assert result.returncode == 1
+    assert "revision is 3, expected 5" in result.stdout
+
+
+def test_annotates_a_lockfile_tracked_but_missing_from_the_checkout(tmp_path: Path) -> None:
+    """Without the guard this aborted the whole run on awk's exit 2, annotating nothing."""
+    result = run_raw(tmp_path, b"version = 1\nrevision = 5\n", unlink=True)
+    assert result.returncode == 1
+    assert "::error file=uv.lock::tracked by git but missing" in result.stdout
+    assert "checked 1 lockfile(s)" in result.stdout, "the summary line still runs"
 
 
 def test_fails_when_expected_revision_was_left_unadapted(tmp_path: Path) -> None:
