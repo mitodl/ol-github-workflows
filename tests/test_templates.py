@@ -22,26 +22,24 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
-import yaml
+from workflow_contract import (
+    ROOT,
+    action_pins,
+    assert_checkout_does_not_persist_credentials,
+    assert_every_action_is_pinned,
+    assert_read_only_permissions,
+    assert_triggers,
+    load,
+)
 
-ROOT = Path(__file__).resolve().parent.parent
 TEMPLATES = sorted((ROOT / "workflow-templates").glob("autofix-*.yml"))
 TEMPLATE_IDS = [path.stem for path in TEMPLATES]
+# Every template, autofix or not, .yml or .yaml: the pin invariant spans all of them.
+ALL_TEMPLATES = sorted((ROOT / "workflow-templates").glob("*.y*ml"))
 AUTOFIX_ACTION = "autofix-ci/action"
-USES_LINE = re.compile(r"^\s*(?:-\s+)?uses:\s*(?P<ref>\S+)(?P<rest>.*)$")
-PINNED_REF = re.compile(r"^[\w.-]+/[\w./-]+@[0-9a-f]{40}$")
-VERSION_COMMENT = re.compile(r"^\s*#\s*v\d+(\.\d+)*$")
 # Steps after the toolchain setup; identical in every template (test_shared_steps_match).
 SHARED_STEP_IDS = ["clean-tree", "fixing-pass", "converge", "no-drift", "autofix"]
 PREK = shutil.which("prek", path=str(ROOT / ".venv" / "bin")) or shutil.which("prek")
-
-
-def load(path: Path) -> dict:
-    """Parse a workflow, mapping YAML 1.1's boolean `on` key back to "on"."""
-    workflow = yaml.safe_load(path.read_text())
-    if True in workflow:
-        workflow["on"] = workflow.pop(True)
-    return workflow
 
 
 def the_job(workflow: dict) -> dict:
@@ -72,17 +70,12 @@ def test_workflow_name_is_autofix_ci(template: Path) -> None:
 
 
 def test_triggers(template: Path) -> None:
-    on = load(template)["on"]
-    assert set(on) == {"pull_request", "push"}
-    assert on["pull_request"] is None, "no branch filter: every PR runs the check"
-    assert list(on["push"]) == ["branches"], "push runs on the default branch only"
-    assert len(on["push"]["branches"]) == 1
+    assert_triggers(load(template)["on"])
 
 
 def test_permissions_are_read_only(template: Path) -> None:
     workflow = load(template)
-    assert workflow["permissions"] == {"contents": "read"}
-    assert "permissions" not in the_job(workflow), "no job widens the token"
+    assert_read_only_permissions(workflow, the_job(workflow))
 
 
 def test_no_privileged_triggers_secrets_or_skips(template: Path) -> None:
@@ -113,29 +106,25 @@ def test_job_is_the_required_check(template: Path) -> None:
 
 
 def test_every_action_is_pinned_by_sha_with_a_version_comment(template: Path) -> None:
-    uses = [USES_LINE.match(line) for line in template.read_text().splitlines()]
-    uses = [match for match in uses if match]
-    assert uses
-    for match in uses:
-        assert PINNED_REF.match(match["ref"]), match["ref"]
-        assert VERSION_COMMENT.match(match["rest"]), f"{match['ref']} needs a `# vX.Y.Z` comment"
+    assert_every_action_is_pinned(template)
 
 
 def test_all_templates_pin_the_same_commit_per_action() -> None:
+    """Across every template and this repository's own workflows, one SHA per action.
+
+    Spans ALL_TEMPLATES rather than the autofix family, so a template outside that family
+    cannot drift to a different pin while the adopted copies stay consistent.
+    """
     pins: dict[str, set[str]] = {}
     own = sorted((ROOT / ".github" / "workflows").glob("*.y*ml"))
-    for path in [*TEMPLATES, *own]:
-        for line in path.read_text().splitlines():
-            if match := USES_LINE.match(line):
-                action, _, sha = match["ref"].partition("@")
-                pins.setdefault(action, set()).add(sha)
+    for path in [*ALL_TEMPLATES, *own]:
+        for action, sha in action_pins(path):
+            pins.setdefault(action, set()).add(sha)
     assert {action: shas for action, shas in pins.items() if len(shas) > 1} == {}
 
 
 def test_checkout_does_not_persist_credentials(template: Path) -> None:
-    checkout = the_job(load(template))["steps"][0]
-    assert checkout["uses"].startswith("actions/checkout@")
-    assert checkout["with"]["persist-credentials"] is False
+    assert_checkout_does_not_persist_credentials(the_job(load(template)))
 
 
 def test_step_order(template: Path) -> None:
