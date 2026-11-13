@@ -69,7 +69,8 @@ looking.
    so it stays stable.
 5. Every action pinned to a 40-character SHA with a `# vX.Y.Z` comment, at the same commit
    per action as the `autofix-*.yml` templates.
-6. `actions/checkout` sets `persist-credentials: false`.
+6. `actions/checkout` sets `persist-credentials: false`, in every repository -- no step
+   runs a `git` command that reaches the network.
 7. The only action used is `actions/checkout`, and no step invokes `uv`. The check reads
    the file; it must not be able to relock anything.
 8. Every `uv.lock` tracked by git is checked, found with `git ls-files -z '*uv.lock'`, so a
@@ -84,7 +85,12 @@ Copy to `.github/workflows/uv-lock-revision.yml` and change only the `ADAPT` lin
 | --- | --- |
 | `branches: [main]` | the repository's default branch |
 | `EXPECTED_REVISION` | the `revision` every `uv.lock` in the repository is on |
-| `persist-credentials: false` | private repositories delete the `with:` block |
+
+`persist-credentials: false` stays as it is, in public and private repositories alike.
+The autofix templates let private repositories drop it because `autofix-ci/action` runs
+`git fetch origin <head sha>`, which fails without the persisted token (contract §3.1 of
+`prek-autofix-contract.md`). This workflow runs only `git ls-files` against the checkout
+it already has, so there is nothing for a credential to buy.
 
 Read the current value rather than assuming it:
 

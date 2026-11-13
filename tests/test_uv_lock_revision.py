@@ -10,28 +10,19 @@ script that actually ships rather than a copy of it.
 from __future__ import annotations
 
 import os
-import re
 import subprocess
 from pathlib import Path
 
 import pytest
-import yaml
+from workflow_contract import (
+    ROOT,
+    assert_checkout_does_not_persist_credentials,
+    assert_every_action_is_pinned,
+    load,
+)
 
-ROOT = Path(__file__).resolve().parent.parent
 TEMPLATE = ROOT / "workflow-templates" / "uv-lock-revision.yml"
-AUTOFIX_TEMPLATES = sorted((ROOT / "workflow-templates").glob("autofix-*.yml"))
 JOB_ID = "uv-lock-revision"
-USES_LINE = re.compile(r"^\s*(?:-\s+)?uses:\s*(?P<ref>\S+)(?P<rest>.*)$")
-PINNED_REF = re.compile(r"^[\w.-]+/[\w./-]+@[0-9a-f]{40}$")
-VERSION_COMMENT = re.compile(r"^\s*#\s*v\d+(\.\d+)*$")
-
-
-def load(path: Path) -> dict:
-    """Parse a workflow, mapping YAML 1.1's boolean `on` key back to "on"."""
-    workflow = yaml.safe_load(path.read_text())
-    if True in workflow:
-        workflow["on"] = workflow.pop(True)
-    return workflow
 
 
 def the_job(workflow: dict) -> dict:
@@ -107,35 +98,14 @@ def test_needs_no_toolchain() -> None:
 
 
 def test_every_action_is_pinned_by_sha_with_a_version_comment() -> None:
-    uses = [match for line in TEMPLATE.read_text().splitlines() if (match := USES_LINE.match(line))]
-    assert uses
-    for match in uses:
-        assert PINNED_REF.match(match["ref"]), match["ref"]
-        assert VERSION_COMMENT.match(match["rest"]), f"{match['ref']} needs a `# vX.Y.Z` comment"
-
-
-def test_pins_match_the_autofix_templates() -> None:
-    """One commit per action across every template, so a bump cannot land half-applied."""
-
-    def pins(path: Path) -> dict[str, str]:
-        found = {}
-        for line in path.read_text().splitlines():
-            if match := USES_LINE.match(line):
-                action, _, sha = match["ref"].partition("@")
-                found[action] = sha
-        return found
-
-    mine = pins(TEMPLATE)
-    for other in AUTOFIX_TEMPLATES:
-        for action, sha in pins(other).items():
-            if action in mine:
-                assert mine[action] == sha, f"{action} differs from {other.name}"
+    # That the pins agree with the other templates is covered by
+    # test_templates.py::test_all_templates_pin_the_same_commit_per_action, which spans
+    # every template rather than only the autofix family.
+    assert_every_action_is_pinned(TEMPLATE)
 
 
 def test_checkout_does_not_persist_credentials() -> None:
-    checkout = the_job(load(TEMPLATE))["steps"][0]
-    assert checkout["uses"].startswith("actions/checkout@")
-    assert checkout["with"]["persist-credentials"] is False
+    assert_checkout_does_not_persist_credentials(the_job(load(TEMPLATE)))
 
 
 def run_check(tmp_path: Path, lockfiles: dict[str, int | None], expected: str = "5"):
@@ -201,3 +171,5 @@ def test_fails_when_the_repository_has_no_lockfile(tmp_path: Path) -> None:
 def test_fails_when_expected_revision_was_left_unadapted(tmp_path: Path) -> None:
     result = run_check(tmp_path, {"uv.lock": 5}, expected="3")
     assert result.returncode == 1
+    assert "::error file=uv.lock::" in result.stdout
+    assert "revision is 5, expected 3" in result.stdout
