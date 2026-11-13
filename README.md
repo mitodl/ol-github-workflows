@@ -8,9 +8,11 @@ Shared GitHub Actions workflows and workflow templates for mitodl repositories.
 | --- | --- |
 | `.github/workflows/add-to-ol-hq.yaml` | Reusable workflow that adds new issues to the Open Learning HQ project |
 | `workflow-templates/autofix-*.yml` | Reference prek + autofix.ci workflows, copied into each repository as `.github/workflows/autofix.yml` |
+| `workflow-templates/uv-lock-revision.yml` | Asserts `uv.lock` stays on the format revision the repository expects, copied into each repository as `.github/workflows/uv-lock-revision.yml` |
 | `docs/prek-autofix-contract.md` | The normative contract every prek + autofix.ci migration PR follows |
 | `docs/prek-autofix-playbook.md` | How to migrate a repository: template choice, checklist, toolchains, pin updates |
 | `docs/prek-autofix-pilot-validation.md` | The gate between the pilots and the rollout: compatibility matrix, open items, per-repository exceptions |
+| `docs/uv-lock-revision-contract.md` | The normative contract for the `uv.lock` revision check |
 | `tests/` | Structural and behavioral tests for the templates |
 
 ## Development
