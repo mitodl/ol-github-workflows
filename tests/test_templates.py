@@ -36,6 +36,8 @@ TEMPLATES = sorted((ROOT / "workflow-templates").glob("autofix-*.yml"))
 TEMPLATE_IDS = [path.stem for path in TEMPLATES]
 # Every template, autofix or not, .yml or .yaml: the pin invariant spans all of them.
 ALL_TEMPLATES = sorted((ROOT / "workflow-templates").glob("*.y*ml"))
+# Actions carry pins of their own, and a template calling one is only as pinned as it is.
+ALL_ACTIONS = sorted((ROOT / "actions").glob("*/action.y*ml"))
 AUTOFIX_ACTION = "autofix-ci/action"
 # Steps after the toolchain setup; identical in every template (test_shared_steps_match).
 SHARED_STEP_IDS = ["clean-tree", "fixing-pass", "converge", "no-drift", "autofix"]
@@ -110,14 +112,16 @@ def test_every_action_is_pinned_by_sha_with_a_version_comment(template: Path) ->
 
 
 def test_all_templates_pin_the_same_commit_per_action() -> None:
-    """Across every template and this repository's own workflows, one SHA per action.
+    """Across every template, action and this repository's own workflows, one SHA per action.
 
     Spans ALL_TEMPLATES rather than the autofix family, so a template outside that family
-    cannot drift to a different pin while the adopted copies stay consistent.
+    cannot drift to a different pin while the adopted copies stay consistent. ALL_ACTIONS
+    is in the sweep because a pin moved out of a template into the action it calls is still
+    a pin every adopting repository runs.
     """
     pins: dict[str, set[str]] = {}
     own = sorted((ROOT / ".github" / "workflows").glob("*.y*ml"))
-    for path in [*ALL_TEMPLATES, *own]:
+    for path in [*ALL_TEMPLATES, *ALL_ACTIONS, *own]:
         for action, sha in action_pins(path):
             pins.setdefault(action, set()).add(sha)
     assert {action: shas for action, shas in pins.items() if len(shas) > 1} == {}

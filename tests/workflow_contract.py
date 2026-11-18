@@ -37,11 +37,13 @@ def action_pins(path: Path) -> list[tuple[str, str]]:
     """Every (action, sha) pin in a workflow, one entry per `uses:` line.
 
     A list rather than a mapping: a file pinning the same action at two different SHAs
-    has to surface both, and a dict would keep only the last.
+    has to surface both, and a dict would keep only the last. A `$/` ref resolves within
+    the repository at the running commit and so has nothing to pin.
     """
     return [
         (action, sha)
         for match in uses_matches(path)
+        if not match["ref"].startswith("$/")
         for action, _, sha in [match["ref"].partition("@")]
     ]
 

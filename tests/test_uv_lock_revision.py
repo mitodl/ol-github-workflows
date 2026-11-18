@@ -1,8 +1,8 @@
-"""Tests for the uv.lock revision workflow template.
+"""Tests for the uv.lock revision action and the workflow template that calls it.
 
 Structural tests assert the properties the contract (docs/uv-lock-revision-contract.md)
 requires, mirroring tests/test_templates.py for the autofix family. Behavioral tests run
-the template's own `run:` script, taken from the YAML, against throwaway git repositories
+the action's own `run:` script, taken from the YAML, against throwaway git repositories
 whose lockfiles are correct, drifted, absent, and so on -- so the assertions cover the
 script that actually ships rather than a copy of it.
 """
@@ -24,19 +24,81 @@ from workflow_contract import (
     load,
 )
 
+ACTION = ROOT / "actions" / "uv-lock-revision" / "action.yml"
 TEMPLATE = ROOT / "workflow-templates" / "uv-lock-revision.yml"
+ADOPTED = ROOT / ".github" / "workflows" / "uv-lock-revision.yml"
 JOB_ID = "uv-lock-revision"
+ACTION_REF = "mitodl/ol-github-workflows/actions/uv-lock-revision"
 
 
 def the_job(workflow: dict) -> dict:
     jobs = workflow["jobs"]
-    assert list(jobs) == [JOB_ID], f"the template defines exactly one job, `{JOB_ID}`"
+    assert list(jobs) == [JOB_ID], f"the workflow defines exactly one job, `{JOB_ID}`"
     return jobs[JOB_ID]
 
 
+def action_steps() -> list[dict]:
+    runs = load(ACTION)["runs"]
+    assert runs["using"] == "composite"
+    return runs["steps"]
+
+
 def check_script() -> str:
-    steps = the_job(load(TEMPLATE))["steps"]
-    return next(step for step in steps if step.get("id") == "revision")["run"]
+    return next(step for step in action_steps() if step.get("id") == "revision")["run"]
+
+
+# --- The action --------------------------------------------------------------------------
+
+
+def test_action_exists() -> None:
+    assert ACTION.is_file()
+
+
+def test_action_takes_the_expected_revision_as_a_required_input() -> None:
+    inputs = load(ACTION)["inputs"]
+    assert list(inputs) == ["expected-revision"]
+    assert inputs["expected-revision"]["required"] is True
+
+
+def test_the_input_reaches_the_script_through_the_environment() -> None:
+    """An expression expanded into the script body would be shell, not a value."""
+    script_step = next(step for step in action_steps() if step.get("id") == "revision")
+    assert script_step["env"] == {"EXPECTED_REVISION": "${{ inputs.expected-revision }}"}
+    assert script_step["shell"] == "bash"
+    assert "${{" not in script_step["run"]
+
+
+def test_action_checks_out_without_persisting_credentials() -> None:
+    assert_checkout_does_not_persist_credentials(load(ACTION)["runs"])
+
+
+def test_action_is_pinned_by_sha_with_a_version_comment() -> None:
+    # That the pins agree with the templates is covered by
+    # test_templates.py::test_all_templates_pin_the_same_commit_per_action, which spans
+    # every template and every action rather than only the autofix family.
+    assert_every_action_is_pinned(ACTION)
+
+
+def test_action_needs_no_toolchain() -> None:
+    """The check reads the file, so no step installs or runs uv -- it cannot relock anything.
+
+    Asserted against `uses:` refs and invoked commands rather than the whole file, because
+    the error message names `uv add` and `uv lock --upgrade` as the things that move the
+    revision, and the glob matches `*uv.lock`.
+    """
+    actions = [step["uses"].split("@")[0] for step in action_steps() if "uses" in step]
+    assert actions == ["actions/checkout"]
+    for line in check_script().splitlines():
+        assert not line.strip().startswith(("uv ", "uvx ", "pip ")), line
+
+
+def test_action_grants_itself_nothing() -> None:
+    text = ACTION.read_text()
+    for forbidden in ("secrets.", "github-token", "continue-on-error"):
+        assert forbidden not in text, forbidden
+
+
+# --- The caller template -----------------------------------------------------------------
 
 
 def test_template_exists() -> None:
@@ -66,23 +128,40 @@ def test_concurrency() -> None:
 
 
 def test_job_is_the_required_check() -> None:
+    """A composite action keeps this name as the whole context.
+
+    A reusable workflow would make it `<caller job> / <called job>`, renaming the required
+    check in every repository that has adopted the template. bin/github-required-checks in
+    ol-infrastructure matches the job name exactly.
+    """
     job = the_job(load(TEMPLATE))
-    # bin/github-required-checks in ol-infrastructure matches the job name exactly.
     assert job["name"] == "uv.lock revision"
     assert job["runs-on"] == "ubuntu-latest"
     assert 0 < job["timeout-minutes"] <= 60
 
 
+def test_the_template_is_nothing_but_the_action() -> None:
+    """No step of its own: whatever the check does, it does centrally or not at all."""
+    steps = the_job(load(TEMPLATE))["steps"]
+    assert len(steps) == 1
+    assert steps[0]["uses"].startswith(f"{ACTION_REF}@")
+    assert list(steps[0]["with"]) == ["expected-revision"]
+
+
+def test_the_template_pins_the_action_by_sha() -> None:
+    """`@main` would let this repository change CI behavior everywhere with no review there."""
+    assert_every_action_is_pinned(TEMPLATE)
+
+
 def test_the_adapt_lines_are_exactly_the_two_the_contract_lists() -> None:
     """Asserted as a set, not a membership test.
 
-    `persist-credentials` deliberately carries no ADAPT marker -- unlike the autofix
-    templates, nothing here runs a networked `git` command -- and a membership test would
-    not notice one being added back.
+    The action ref deliberately carries no ADAPT marker -- a repository that repoints it
+    somewhere else is no longer running the shared check -- and a membership test would not
+    notice one being added.
     """
-    job = the_job(load(TEMPLATE))
-    assert list(job["env"]) == ["EXPECTED_REVISION"]
-    assert str(job["env"]["EXPECTED_REVISION"]).isdigit()
+    with_ = the_job(load(TEMPLATE))["steps"][0]["with"]
+    assert str(with_["expected-revision"]).isdigit()
     adapts = [
         line.split("# ADAPT:")[0].strip()
         for line in TEMPLATE.read_text().splitlines()
@@ -90,62 +169,48 @@ def test_the_adapt_lines_are_exactly_the_two_the_contract_lists() -> None:
     ]
     assert len(adapts) == 2, adapts
     assert any(line.startswith("branches:") for line in adapts), adapts
-    assert any(line.startswith("EXPECTED_REVISION:") for line in adapts), adapts
+    assert any(line.startswith("expected-revision:") for line in adapts), adapts
 
 
-def test_needs_no_toolchain() -> None:
-    """The check reads the file, so no step installs or runs uv -- it cannot relock anything.
-
-    Asserted against `uses:` refs and invoked commands rather than the whole file, because
-    the error message names `uv add` and `uv lock --upgrade` as the things that move the
-    revision, and the glob matches `*uv.lock`.
-    """
-    workflow = load(TEMPLATE)
-    actions = [step["uses"].split("@")[0] for step in the_job(workflow)["steps"] if "uses" in step]
-    assert actions == ["actions/checkout"]
-    for line in check_script().splitlines():
-        assert not line.strip().startswith(("uv ", "uvx ", "pip ")), line
+# --- This repository's own adoption ------------------------------------------------------
 
 
-def test_every_action_is_pinned_by_sha_with_a_version_comment() -> None:
-    # That the pins agree with the other templates is covered by
-    # test_templates.py::test_all_templates_pin_the_same_commit_per_action, which spans
-    # every template rather than only the autofix family.
-    assert_every_action_is_pinned(TEMPLATE)
+def test_this_repository_runs_the_template() -> None:
+    """The adopted copy may differ at the action ref and the revision, and nowhere else.
 
-
-def test_checkout_does_not_persist_credentials() -> None:
-    assert_checkout_does_not_persist_credentials(the_job(load(TEMPLATE)))
-
-
-ADOPTED = ROOT / ".github" / "workflows" / "uv-lock-revision.yml"
-REVISION_LINE = re.compile(r'^(\s*EXPECTED_REVISION:\s*)"?\d+"?', re.M)
-
-
-def test_this_repository_runs_the_template_verbatim() -> None:
-    """The adopted copy may differ from the template at EXPECTED_REVISION and nowhere else.
-
-    test_templates.py asserts byte-equality for the autofix family. This one cannot, because
-    the adopted copy carries this repository's own revision -- but everything else, including
-    the permissions and the exit status, has to match or adopting proves nothing.
+    test_templates.py asserts byte-equality for the autofix family. This one cannot: the
+    adopted copy calls the action by self-repository ref, so a pull request here exercises
+    the action as the branch defines it rather than whatever is already on main. Everything
+    else, including the permissions and the single step, has to match or adopting proves
+    nothing.
     """
 
-    def normalized(path: Path) -> str:
-        return REVISION_LINE.sub(r"\1<REVISION>", path.read_text())
+    template, adopted = load(TEMPLATE), load(ADOPTED)
+    for key in ("name", "on", "permissions", "concurrency"):
+        assert adopted[key] == template[key], key
 
-    assert normalized(ADOPTED) == normalized(TEMPLATE)
+    adopted_job, template_job = the_job(adopted), the_job(template)
+    for key in ("name", "runs-on", "timeout-minutes"):
+        assert adopted_job[key] == template_job[key], key
+
+    (step,) = adopted_job["steps"]
+    assert step["uses"] == "$/actions/uv-lock-revision"
+    assert list(step["with"]) == list(template_job["steps"][0]["with"])
 
 
 def test_the_adopted_copy_expects_this_repositorys_revision() -> None:
-    expected = the_job(load(ADOPTED))["env"]["EXPECTED_REVISION"]
+    expected = the_job(load(ADOPTED))["steps"][0]["with"]["expected-revision"]
     locks = (ROOT / "uv.lock").read_text()
     actual = re.search(r"^revision = (\d+)", locks, re.M)
     assert actual, "uv.lock has no revision key"
     assert str(expected) == actual.group(1)
 
 
+# --- Behavior ----------------------------------------------------------------------------
+
+
 def run_check(tmp_path: Path, lockfiles: dict[str, int | None], expected: str = "5"):
-    """Run the template's own script over a throwaway repo, returning the CompletedProcess."""
+    """Run the action's own script over a throwaway repo, returning the CompletedProcess."""
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
     for name, revision in lockfiles.items():
         path = tmp_path / name
