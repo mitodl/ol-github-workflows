@@ -130,8 +130,11 @@ This repository's own `.github/workflows/uv-lock-revision.yml` is the one copy t
 it calls the action by self-repository ref, `uses: $/actions/uv-lock-revision`, so a pull
 request here exercises the action as the branch defines it rather than whatever is already on
 `main`. `tests/test_uv_lock_revision.py::test_this_repository_runs_the_template` asserts that
-nothing else about it diverges. actionlint does not yet know that syntax, so
-`.github/actionlint.yaml` filters the one message it produces for the one file.
+its triggers, permissions, concurrency, job name and inputs match the template's, and §3.2's
+items 2 and 3 are asserted against it directly rather than through that comparison -- a
+widened token or a `continue-on-error` reachable only in the copy this repository runs is the
+one divergence a key-by-key comparison would not see. actionlint does not yet know the `$/`
+syntax, so `.github/actionlint.yaml` filters the one message it produces for the one file.
 
 ## 5. Changing the format deliberately
 

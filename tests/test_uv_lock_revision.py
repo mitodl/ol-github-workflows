@@ -109,13 +109,21 @@ def test_triggers() -> None:
     assert_triggers(load(TEMPLATE)["on"])
 
 
-def test_permissions_are_read_only() -> None:
-    workflow = load(TEMPLATE)
+@pytest.mark.parametrize("path", [TEMPLATE, ADOPTED], ids=["template", "adopted"])
+def test_permissions_are_read_only(path: Path) -> None:
+    workflow = load(path)
     assert_read_only_permissions(workflow, the_job(workflow))
 
 
-def test_no_privileged_triggers_secrets_or_skips() -> None:
-    text = TEMPLATE.read_text()
+@pytest.mark.parametrize("path", [TEMPLATE, ADOPTED], ids=["template", "adopted"])
+def test_no_privileged_triggers_secrets_or_skips(path: Path) -> None:
+    """Asserted against the adopted copy too.
+
+    test_this_repository_runs_the_template compares a fixed list of keys, so a widened
+    token or a `continue-on-error` added only to the copy this repository actually runs
+    would otherwise pass both it and every other test here.
+    """
+    text = path.read_text()
     for forbidden in ("pull_request_target", "workflow_run", "secrets.", "continue-on-error"):
         assert forbidden not in text, forbidden
 
