@@ -3,7 +3,7 @@
 What `actions/uv-lock-revision` and the `workflow-templates/uv-lock-revision.yml` that calls
 it guarantee, and what a repository adopting them has to do. Normative.
 `tests/test_uv_lock_revision.py` asserts every structural claim except the pin consistency in
-§3.6, which `tests/test_templates.py` asserts across every template and action at once.
+§3.2 item 6, which `tests/test_templates.py` asserts across every template and action at once.
 
 ## 1. The problem
 
@@ -68,7 +68,7 @@ The check is a composite action, so the adopting workflow calls it as a **step**
 own job. A reusable workflow called with `uses:` at job level would make the check context
 `<caller job> / <called job>`, renaming the required check in every repository that has
 adopted it, and GitHub offers no way to collapse that to one name. The action keeps the
-context at `uv.lock revision` (§3.4) and keeps the `actions/checkout` pin in one place
+context at `uv.lock revision` (§3.2 item 4) and keeps the `actions/checkout` pin in one place
 instead of in every adopting repository.
 
 ### 3.2 The workflow
@@ -130,19 +130,35 @@ This repository's own `.github/workflows/uv-lock-revision.yml` is the one copy t
 it calls the action by self-repository ref, `uses: $/actions/uv-lock-revision`, so a pull
 request here exercises the action as the branch defines it rather than whatever is already on
 `main`. `tests/test_uv_lock_revision.py::test_this_repository_runs_the_template` asserts that
-its triggers, permissions, concurrency, job name and inputs match the template's, and §3.2's
+its triggers, permissions, concurrency, job name and input names match the template's -- the
+input *values* differ on purpose, since the two repositories expect different revisions -- and §3.2
 items 2 and 3 are asserted against it directly rather than through that comparison -- a
 widened token or a `continue-on-error` reachable only in the copy this repository runs is the
 one divergence a key-by-key comparison would not see. actionlint does not yet know the `$/`
 syntax, so `.github/actionlint.yaml` filters the one message it produces for the one file.
 
-## 5. Changing the format deliberately
+## 5. Changing the check
+
+A fix to the action reaches an adopting repository only as a Renovate bump of the pinned SHA,
+and Renovate raises one only when a newer tag exists: a SHA whose comment names no tag is
+[disabled by default](https://docs.renovatebot.com/modules/manager/github-actions/), because
+nothing tells it what the SHA is a version of. So every change to `actions/uv-lock-revision`
+needs a tag, or no repository ever receives it. Tag the merge commit and update the template's
+pin and version comment in the same move.
+
+Tags are repository-wide, so a second action here shares this one's version line and its
+adopters see a bump whose behavior did not change. Group them in Renovate before reaching for
+a per-action prefix: a prefixed comment such as `# uv-lock-revision/v1.0.0` does not match
+Renovate's `/^v?\d+/`, which drops the dependency to the `github-digest` datasource and
+digest-only updates.
+
+## 6. Changing the format deliberately
 
 Raise `expected-revision` in the same pull request as the relocked `uv.lock`. The diff then
 shows both, which is the reviewable moment the check exists to create. Nothing automated
 updates it - a bot cannot decide that a format change is intended.
 
-## 6. What it does not do
+## 7. What it does not do
 
 It does not pin uv, and does not stop anyone running an old one. It reports that the
 format moved, not who moved it. Repositories wanting a floor for unrelated reasons, such
