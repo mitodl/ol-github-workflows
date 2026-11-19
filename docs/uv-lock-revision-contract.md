@@ -96,11 +96,15 @@ instead of in every adopting repository.
 9. `expected-revision` is the single required input, and it reaches the script through
    `env:` rather than `${{ }}` interpolation inside the body. An expression expanded into
    the script would be shell, and a caller's typo could run as one.
-10. Every tracked path ending in `uv.lock` is checked, found with
+10. The script rejects an `expected-revision` that is not a decimal integer before it scans
+    anything. GitHub does not enforce `required:` on action inputs, so an omitted `with:`
+    arrives as an empty string -- which equals the empty revision of a lockfile with no
+    `revision` key, and would pass the very drift the check exists to catch.
+11. Every tracked path ending in `uv.lock` is checked, found with
     `git ls-files -z '*uv.lock'`, so a workspace with many lockfiles needs no extra
     configuration. The pathspec crosses `/` and matches a non-empty prefix, so a stray
     `notuv.lock` would be checked too -- it errs toward checking more, not less.
-11. A repository with no `uv.lock` fails the check rather than passing vacuously.
+12. A repository with no `uv.lock` fails the check rather than passing vacuously.
 
 ## 4. Adoption
 
@@ -130,9 +134,10 @@ This repository's own `.github/workflows/uv-lock-revision.yml` is the one copy t
 it calls the action by self-repository ref, `uses: $/actions/uv-lock-revision`, so a pull
 request here exercises the action as the branch defines it rather than whatever is already on
 `main`. `tests/test_uv_lock_revision.py::test_this_repository_runs_the_template` asserts that
-its triggers, permissions, concurrency, job name and input names match the template's -- the
-input *values* differ on purpose, since the two repositories expect different revisions -- and §3.2
-items 2 and 3 are asserted against it directly rather than through that comparison -- a
+its triggers, permissions, concurrency, job name and input names match the template's; the
+input *values* differ on purpose, since the two repositories expect different revisions.
+
+§3.2 items 2 and 3 are asserted against it directly rather than through that comparison. A
 widened token or a `continue-on-error` reachable only in the copy this repository runs is the
 one divergence a key-by-key comparison would not see. actionlint does not yet know the `$/`
 syntax, so `.github/actionlint.yaml` filters the one message it produces for the one file.

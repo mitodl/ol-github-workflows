@@ -28,6 +28,7 @@ from workflow_contract import (
     assert_checkout_does_not_persist_credentials,
     assert_every_action_is_pinned,
     assert_read_only_permissions,
+    assert_text_forbids,
     assert_triggers,
     load,
 )
@@ -81,15 +82,14 @@ def test_permissions_are_read_only(template: Path) -> None:
 
 
 def test_no_privileged_triggers_secrets_or_skips(template: Path) -> None:
-    text = template.read_text()
-    for forbidden in (
+    assert_text_forbids(
+        template,
         "pull_request_target",
         "workflow_run",
         "secrets.",
         "SKIP",
         "continue-on-error",
-    ):
-        assert forbidden not in text, forbidden
+    )
 
 
 def test_concurrency(template: Path) -> None:

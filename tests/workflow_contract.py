@@ -70,6 +70,19 @@ def assert_triggers(on: dict) -> None:
     assert len(on["push"]["branches"]) == 1
 
 
+def assert_text_forbids(path: Path, *forbidden: str) -> None:
+    """Asserted against the raw text, not the parsed workflow.
+
+    A key nested anywhere -- a `secrets.` reference in a `with:` three levels down, a
+    `continue-on-error` on one step of several -- is out of contract wherever it appears,
+    and walking the parsed tree for it would have to know every place it could hide.
+    Each suite passes its own strings; only the search is shared.
+    """
+    text = path.read_text()
+    for string in forbidden:
+        assert string not in text, string
+
+
 def assert_read_only_permissions(workflow: dict, job: dict) -> None:
     assert workflow["permissions"] == {"contents": "read"}
     assert "permissions" not in job, "no job widens the token"

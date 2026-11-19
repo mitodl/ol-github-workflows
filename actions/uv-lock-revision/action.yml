@@ -42,6 +42,13 @@ runs:
         EXPECTED_REVISION: ${{ inputs.expected-revision }}
       run: |
         set -euo pipefail
+        # GitHub does not enforce `required:` on action inputs, so an omitted `with:` arrives
+        # here as an empty string -- which equals the empty `actual` of a lockfile with no
+        # revision key, and passes the very drift the check exists to catch.
+        if [[ ! "$EXPECTED_REVISION" =~ ^[0-9]+$ ]]; then
+          echo "::error::expected-revision is '${EXPECTED_REVISION}', not a revision number. Set it to the revision every uv.lock in this repository is on."
+          exit 1
+        fi
         status=0
         count=0
         while IFS= read -r -d '' lock; do

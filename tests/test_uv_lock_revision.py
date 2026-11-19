@@ -20,6 +20,7 @@ from workflow_contract import (
     assert_checkout_does_not_persist_credentials,
     assert_every_action_is_pinned,
     assert_read_only_permissions,
+    assert_text_forbids,
     assert_triggers,
     load,
 )
@@ -93,9 +94,7 @@ def test_action_needs_no_toolchain() -> None:
 
 
 def test_action_grants_itself_nothing() -> None:
-    text = ACTION.read_text()
-    for forbidden in ("secrets.", "github-token", "continue-on-error"):
-        assert forbidden not in text, forbidden
+    assert_text_forbids(ACTION, "secrets.", "github-token", "continue-on-error")
 
 
 # --- The caller template -----------------------------------------------------------------
@@ -123,9 +122,9 @@ def test_no_privileged_triggers_secrets_or_skips(path: Path) -> None:
     token or a `continue-on-error` added only to the copy this repository actually runs
     would otherwise pass both it and every other test here.
     """
-    text = path.read_text()
-    for forbidden in ("pull_request_target", "workflow_run", "secrets.", "continue-on-error"):
-        assert forbidden not in text, forbidden
+    assert_text_forbids(
+        path, "pull_request_target", "workflow_run", "secrets.", "continue-on-error"
+    )
 
 
 def test_concurrency() -> None:
@@ -329,3 +328,25 @@ def test_fails_when_expected_revision_was_left_unadapted(tmp_path: Path) -> None
     assert result.returncode == 1
     assert "::error file=uv.lock::" in result.stdout
     assert "revision is 5, expected 3" in result.stdout
+
+
+@pytest.mark.parametrize(
+    "expected",
+    [
+        pytest.param("", id="omitted"),
+        pytest.param("  ", id="blank"),
+        pytest.param("v5", id="version-prefixed"),
+        pytest.param("5.0", id="dotted"),
+        pytest.param("5; rm -rf /", id="injected"),
+    ],
+)
+def test_rejects_an_expected_revision_that_is_not_a_number(tmp_path: Path, expected: str) -> None:
+    """An omitted `with:` reaches the script empty -- GitHub does not enforce `required:`.
+
+    Empty is the dangerous one: it equals the empty `actual` of a lockfile with no revision
+    key, so without this guard the check passes exactly the drift it exists to catch.
+    """
+    result = run_check(tmp_path, {"uv.lock": None}, expected=expected)
+    assert result.returncode == 1
+    assert "not a revision number" in result.stdout
+    assert "checked" not in result.stdout, "it fails before scanning anything"
