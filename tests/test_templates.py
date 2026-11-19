@@ -130,11 +130,9 @@ def test_all_templates_pin_the_same_commit_per_action() -> None:
     assert {action: shas for action, shas in pins.items() if len(shas) > 1} == {}
 
 
-def git_root_exec(*args: str) -> int:
-    """A git command against this checkout, as a return code: every caller asks yes or no."""
-    return subprocess.run(
-        ["git", *args], cwd=ROOT, capture_output=True, text=True, check=False
-    ).returncode
+def git_root_exec(*args: str) -> subprocess.CompletedProcess:
+    """A git command against this checkout, never raising: the caller reads the outcome."""
+    return subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True, check=False)
 
 
 def test_self_pins_are_reachable_from_the_default_branch() -> None:
@@ -151,11 +149,16 @@ def test_self_pins_are_reachable_from_the_default_branch() -> None:
     pin moves in a pull request of its own, after the commit it names is on `main` and
     tagged, which is what docs/uv-lock-revision-contract.md §5 describes.
     """
+    if git_root_exec("rev-parse", "--is-shallow-repository").stdout.strip() == "true":
+        # A shallow clone has `origin/main` but not the object the pin names, so the walk
+        # would fail for want of history rather than for anything wrong with the pin.
+        pytest.skip("shallow checkout: the history this walks is not here")
+
     main = next(
         (
             ref
             for ref in ("origin/main", "main")
-            if git_root_exec("rev-parse", "--verify", ref) == 0
+            if git_root_exec("rev-parse", "--verify", ref).returncode == 0
         ),
         None,
     )
@@ -170,8 +173,9 @@ def test_self_pins_are_reachable_from_the_default_branch() -> None:
     }
     assert pins, "no template pins an action from this repository; this assertion covers nothing"
     for sha in sorted(pins):
-        assert git_root_exec("cat-file", "-e", f"{sha}^{{commit}}") == 0, f"{sha} is not a commit"
-        assert git_root_exec("merge-base", "--is-ancestor", sha, main) == 0, (
+        cat_file = git_root_exec("cat-file", "-e", f"{sha}^{{commit}}")
+        assert cat_file.returncode == 0, f"{sha} is not a commit in this repository"
+        assert git_root_exec("merge-base", "--is-ancestor", sha, main).returncode == 0, (
             f"{sha} is not reachable from {main}; tag and merge it before pinning it"
         )
 
