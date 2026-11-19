@@ -1,0 +1,9 @@
+# actionlint v1.7.12 does not yet know GitHub's self-repository `uses: $/...` syntax, which
+# zizmor's self-repository audit requires in preference to `./...`: a `$/` ref resolves at the
+# running commit rather than from whatever a previous step left on disk, and counts as fully
+# pinned. Scoped to the one file that uses it, by the one message, so every other action-format
+# error still fails. Drop this once actionlint supports the syntax.
+paths:
+  .github/workflows/uv-lock-revision.yml:
+    ignore:
+      - 'specifying action "\$/.+" in invalid format because ref is missing'

@@ -9,7 +9,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from workflow_contract import action_pins
+import pytest
+from workflow_contract import action_pins, assert_text_forbids
 
 CHECKOUT = "actions/checkout"
 SHA_A = "3d3c42e5aac5ba805825da76410c181273ba90b1"
@@ -39,3 +40,17 @@ def test_empty_for_a_workflow_using_no_actions(tmp_path: Path) -> None:
     path = tmp_path / "wf.yml"
     path.write_text("jobs:\n  j:\n    steps:\n      - run: echo hi\n")
     assert action_pins(path) == []
+
+
+def test_forbidden_text_passes_when_no_string_appears(tmp_path: Path) -> None:
+    path = tmp_path / "wf.yml"
+    path.write_text("on: pull_request\npermissions:\n  contents: read\n")
+    assert_text_forbids(path, "pull_request_target", "secrets.")
+
+
+def test_forbidden_text_names_the_string_it_found(tmp_path: Path) -> None:
+    """The message is the whole value here: it says which string, not just that one matched."""
+    path = tmp_path / "wf.yml"
+    path.write_text("jobs:\n  j:\n    steps:\n      - with:\n          token: ${{ secrets.GH }}\n")
+    with pytest.raises(AssertionError, match="secrets."):
+        assert_text_forbids(path, "pull_request_target", "secrets.")

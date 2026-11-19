@@ -37,11 +37,13 @@ def action_pins(path: Path) -> list[tuple[str, str]]:
     """Every (action, sha) pin in a workflow, one entry per `uses:` line.
 
     A list rather than a mapping: a file pinning the same action at two different SHAs
-    has to surface both, and a dict would keep only the last.
+    has to surface both, and a dict would keep only the last. A `$/` ref resolves within
+    the repository at the running commit and so has nothing to pin.
     """
     return [
         (action, sha)
         for match in uses_matches(path)
+        if not match["ref"].startswith("$/")
         for action, _, sha in [match["ref"].partition("@")]
     ]
 
@@ -66,6 +68,19 @@ def assert_triggers(on: dict) -> None:
     assert on["pull_request"] is None, "no branch filter: every PR runs the check"
     assert list(on["push"]) == ["branches"], "push runs on the default branch only"
     assert len(on["push"]["branches"]) == 1
+
+
+def assert_text_forbids(path: Path, *forbidden: str) -> None:
+    """Asserted against the raw text, not the parsed workflow.
+
+    A key nested anywhere -- a `secrets.` reference in a `with:` three levels down, a
+    `continue-on-error` on one step of several -- is out of contract wherever it appears,
+    and walking the parsed tree for it would have to know every place it could hide.
+    Each suite passes its own strings; only the search is shared.
+    """
+    text = path.read_text()
+    for string in forbidden:
+        assert string not in text, string
 
 
 def assert_read_only_permissions(workflow: dict, job: dict) -> None:

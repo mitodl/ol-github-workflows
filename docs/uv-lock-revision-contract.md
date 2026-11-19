@@ -1,9 +1,9 @@
 # uv.lock revision check contract
 
-What `workflow-templates/uv-lock-revision.yml` guarantees, and what a repository adopting
-it has to do. Normative. `tests/test_uv_lock_revision.py` asserts every structural claim except the
-pin consistency in §3.5, which `tests/test_templates.py` asserts across every template
-at once.
+What `actions/uv-lock-revision` and the `workflow-templates/uv-lock-revision.yml` that calls
+it guarantee, and what a repository adopting them has to do. Normative.
+`tests/test_uv_lock_revision.py` asserts every structural claim except the pin consistency in
+§3.2 item 6, which `tests/test_templates.py` asserts across every template and action at once.
 
 ## 1. The problem
 
@@ -62,6 +62,17 @@ looking.
 
 ## 3. Required properties
 
+### 3.1 Why a composite action and not a reusable workflow
+
+The check is a composite action, so the adopting workflow calls it as a **step** inside its
+own job. A reusable workflow called with `uses:` at job level would make the check context
+`<caller job> / <called job>`, renaming the required check in every repository that has
+adopted it, and GitHub offers no way to collapse that to one name. The action keeps the
+context at `uv.lock revision` (§3.2 item 4) and keeps the `actions/checkout` pin in one place
+instead of in every adopting repository.
+
+### 3.2 The workflow
+
 1. Triggers on every `pull_request` with no branch filter, and on `push` to the default
    branch only.
 2. `permissions: {contents: read}` at workflow level; no job widens the token.
@@ -69,34 +80,46 @@ looking.
 4. Exactly one job, `uv-lock-revision`, named `uv.lock revision`. The name is the required
    check context and `bin/github-required-checks` in ol-infrastructure matches it exactly,
    so it stays stable.
-5. Every action pinned to a 40-character SHA with a `# vX.Y.Z` comment, at the same commit
-   per action as the `autofix-*.yml` templates.
-6. `actions/checkout` sets `persist-credentials: false`, in every repository -- no step
-   runs a `git` command that reaches the network.
-7. The only action used is `actions/checkout`, and no step invokes `uv`. The check reads
+5. The job has exactly one step: the action. Whatever the check does, it does centrally or
+   not at all.
+6. The action is pinned to a 40-character SHA with a `# vX.Y.Z` comment, like any other
+   action, and at the same commit per action as the `autofix-*.yml` templates. `@main` is
+   out of contract: it would let this repository change CI behavior in every adopting
+   repository with no review in any of them.
+
+### 3.3 The action
+
+7. The only action it uses is `actions/checkout`, and no step invokes `uv`. The check reads
    the file; it must not be able to relock anything.
-8. Every tracked path ending in `uv.lock` is checked, found with
-   `git ls-files -z '*uv.lock'`, so a workspace with many lockfiles needs no extra
-   configuration. The pathspec crosses `/` and matches a non-empty prefix, so a stray
-   `notuv.lock` would be checked too -- it errs toward checking more, not less.
-9. A repository with no `uv.lock` fails the check rather than passing vacuously.
+8. `actions/checkout` sets `persist-credentials: false`, in every repository -- no step
+   runs a `git` command that reaches the network.
+9. `expected-revision` is the single required input, and it reaches the script through
+   `env:` rather than `${{ }}` interpolation inside the body. An expression expanded into
+   the script would be shell, and a caller's typo could run as one.
+10. The script rejects an `expected-revision` that is not a decimal integer before it scans
+    anything. GitHub does not enforce `required:` on action inputs, so an omitted `with:`
+    arrives as an empty string -- which equals the empty revision of a lockfile with no
+    `revision` key, and would pass the very drift the check exists to catch.
+11. Every tracked path ending in `uv.lock` is checked, found with
+    `git ls-files -z '*uv.lock'`, so a workspace with many lockfiles needs no extra
+    configuration. The pathspec crosses `/` and matches a non-empty prefix, so a stray
+    `notuv.lock` would be checked too -- it errs toward checking more, not less.
+12. A repository with no `uv.lock` fails the check rather than passing vacuously.
 
 ## 4. Adoption
 
-Copy to `.github/workflows/uv-lock-revision.yml` and change only the `ADAPT` lines:
+Copy `workflow-templates/uv-lock-revision.yml` to `.github/workflows/uv-lock-revision.yml`
+and change only the `ADAPT` lines:
 
 | Line | Change |
 | --- | --- |
 | `branches: [main]` | the repository's default branch |
-| `EXPECTED_REVISION` | the `revision` every `uv.lock` in the repository is on |
+| `expected-revision` | the `revision` every `uv.lock` in the repository is on |
 
-`persist-credentials: false` stays as it is, in public and private repositories alike.
-The autofix templates let private repositories drop it because `autofix-ci/action` runs
-`git fetch origin <head sha>`, which fails without the persisted token (contract §3.1 of
-`prek-autofix-contract.md`). This workflow runs only `git ls-files` against the checkout
-it already has, so there is nothing for a credential to buy.
+The action ref carries no `ADAPT` marker. A repository that repoints it is no longer running
+the shared check; Renovate keeps the pin current, as it does for every other action.
 
-Read the current value rather than assuming it:
+Read the current revision rather than assuming it:
 
 ```console
 $ git ls-files -z '*uv.lock' | xargs -0 grep -h '^revision = ' | sort -u
@@ -107,13 +130,40 @@ More than one value means the lockfiles already disagree; reconcile them before 
 
 Add the job to the repository's required checks once it has passed on the default branch.
 
-## 5. Changing the format deliberately
+This repository's own `.github/workflows/uv-lock-revision.yml` is the one copy that differs:
+it calls the action by self-repository ref, `uses: $/actions/uv-lock-revision`, so a pull
+request here exercises the action as the branch defines it rather than whatever is already on
+`main`. `tests/test_uv_lock_revision.py::test_this_repository_runs_the_template` asserts that
+its triggers, permissions, concurrency, job name and input names match the template's; the
+input *values* differ on purpose, since the two repositories expect different revisions.
 
-Raise `EXPECTED_REVISION` in the same pull request as the relocked `uv.lock`. The diff then
+§3.2 items 2 and 3 are asserted against it directly rather than through that comparison. A
+widened token or a `continue-on-error` reachable only in the copy this repository runs is the
+one divergence a key-by-key comparison would not see. actionlint does not yet know the `$/`
+syntax, so `.github/actionlint.yaml` filters the one message it produces for the one file.
+
+## 5. Changing the check
+
+A fix to the action reaches an adopting repository only as a Renovate bump of the pinned SHA,
+and Renovate raises one only when a newer tag exists: a SHA whose comment names no tag is
+[disabled by default](https://docs.renovatebot.com/modules/manager/github-actions/), because
+nothing tells it what the SHA is a version of. So every change to `actions/uv-lock-revision`
+needs a tag, or no repository ever receives it. Tag the merge commit and update the template's
+pin and version comment in the same move.
+
+Tags are repository-wide, so a second action here shares this one's version line and its
+adopters see a bump whose behavior did not change. Group them in Renovate before reaching for
+a per-action prefix: a prefixed comment such as `# uv-lock-revision/v1.0.0` does not match
+Renovate's `/^v?\d+/`, which drops the dependency to the `github-digest` datasource and
+digest-only updates.
+
+## 6. Changing the format deliberately
+
+Raise `expected-revision` in the same pull request as the relocked `uv.lock`. The diff then
 shows both, which is the reviewable moment the check exists to create. Nothing automated
 updates it - a bot cannot decide that a format change is intended.
 
-## 6. What it does not do
+## 7. What it does not do
 
 It does not pin uv, and does not stop anyone running an old one. It reports that the
 format moved, not who moved it. Repositories wanting a floor for unrelated reasons, such
