@@ -40,6 +40,9 @@ ALL_TEMPLATES = sorted((ROOT / "workflow-templates").glob("*.y*ml"))
 # Actions carry pins of their own, and a template calling one is only as pinned as it is.
 ALL_ACTIONS = sorted((ROOT / "actions").glob("*/action.y*ml"))
 AUTOFIX_ACTION = "autofix-ci/action"
+# A pin naming this repository is the one kind a pull request here can move onto a commit
+# that never reaches the default branch.
+SELF = "mitodl/ol-github-workflows/"
 # Steps after the toolchain setup; identical in every template (test_shared_steps_match).
 SHARED_STEP_IDS = ["clean-tree", "fixing-pass", "converge", "no-drift", "autofix"]
 PREK = shutil.which("prek", path=str(ROOT / ".venv" / "bin")) or shutil.which("prek")
@@ -125,6 +128,63 @@ def test_all_templates_pin_the_same_commit_per_action() -> None:
         for action, sha in action_pins(path):
             pins.setdefault(action, set()).add(sha)
     assert {action: shas for action, shas in pins.items() if len(shas) > 1} == {}
+
+
+def git_root_exec(*args: str) -> subprocess.CompletedProcess:
+    """A git command against this checkout, never raising: the caller reads the outcome."""
+    return subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True, check=False)
+
+
+def test_self_pins_are_reachable_from_the_default_branch() -> None:
+    """A pin naming this repository has to be on `main`, not merely on some branch.
+
+    Squash-merging the pull request that introduces an action leaves the template pinned
+    to an object reachable only from the branch that is then deleted: the pin still parses,
+    Renovate still has a SHA to compare against, and the ref resolves to nothing for every
+    repository that adopts the template.
+
+    Asserted against `main` rather than `HEAD`, which on a pull request is the merge commit
+    and so reaches the branch's own commits -- a pin added and merged in one pull request
+    would pass here and break the moment the branch went away. The consequence is that the
+    pin moves in a pull request of its own, after the commit it names is on `main` and
+    tagged, which is what docs/uv-lock-revision-contract.md §5 describes.
+    """
+    if git_root_exec("rev-parse", "--is-shallow-repository").stdout.strip() == "true":
+        # A shallow clone has `origin/main` but not the object the pin names, so the walk
+        # would fail for want of history rather than for anything wrong with the pin.
+        pytest.skip("shallow checkout: the history this walks is not here")
+
+    main = next(
+        (
+            ref
+            for ref in ("origin/main", "main")
+            if git_root_exec("rev-parse", "--verify", ref).returncode == 0
+        ),
+        None,
+    )
+    if main is None:
+        pytest.skip("no main ref in this checkout")
+
+    pins = {
+        sha
+        for path in [*ALL_TEMPLATES, *ALL_ACTIONS]
+        for action, sha in action_pins(path)
+        if action.startswith(SELF)
+    }
+    assert pins, "no template pins an action from this repository; this assertion covers nothing"
+    for sha in sorted(pins):
+        cat_file = git_root_exec("cat-file", "-e", f"{sha}^{{commit}}")
+        assert cat_file.returncode == 0, f"{sha} is not a commit in this repository"
+        assert git_root_exec("merge-base", "--is-ancestor", sha, main).returncode == 0, (
+            f"{sha} is not reachable from {main}; tag and merge it before pinning it"
+        )
+
+
+def test_the_test_workflow_fetches_the_history_that_assertion_needs() -> None:
+    """`fetch-depth: 0`, or the ancestor check above skips itself in CI and proves nothing."""
+    checkout = load(ROOT / ".github" / "workflows" / "test.yml")["jobs"]["templates"]["steps"][0]
+    assert checkout["uses"].startswith("actions/checkout@")
+    assert checkout["with"]["fetch-depth"] == 0
 
 
 def test_checkout_does_not_persist_credentials(template: Path) -> None:
