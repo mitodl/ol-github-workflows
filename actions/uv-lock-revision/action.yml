@@ -15,6 +15,8 @@ description: Assert that no uv.lock in the repository falls to an older format t
 # what the same lockfile is already on in the branch being merged into. `version` is exact,
 # because a change there is the one a repository has to migrate for deliberately.
 #
+# The work is in check.py, which parses the lockfile rather than scanning it.
+#
 # The constraint cannot be expressed as a uv version range. uv has only ever changed the revision
 # mid-minor (0.6.10 -> 0.6.17, 0.8.0 -> 0.8.4, 0.12.21 -> 0.12.22), so any `<next-minor` bound
 # permits exactly the change it is meant to prevent -- and the re-resolve that moves the field is
@@ -55,95 +57,7 @@ runs:
       env:
         EXPECTED_REVISION: ${{ inputs.expected-revision }}
         EXPECTED_VERSION: ${{ inputs.expected-version }}
-      run: |
-        set -euo pipefail
-        # GitHub does not enforce `required:` on action inputs, so an omitted `with:` arrives
-        # here as an empty string -- which would compare equal to a lockfile's missing key and
-        # pass the very drift the check exists to catch.
-        if [[ ! "$EXPECTED_REVISION" =~ ^[0-9]+$ ]]; then
-          echo "::error::expected-revision is '${EXPECTED_REVISION}', not a revision number. Set it to the lowest revision any uv.lock in this repository may be on."
-          exit 1
-        fi
-        if [[ ! "$EXPECTED_VERSION" =~ ^[0-9]+$ ]]; then
-          echo "::error::expected-version is '${EXPECTED_VERSION}', not a lockfile version number."
-          exit 1
-        fi
-
-        # Tolerate CRLF, trailing spaces and loose spacing around `=`: a mismatch
-        # the eye cannot see ("revision is 5, expected 5") is worse than no check.
-        # Takes a path, so the ratchet can hand it a process substitution rather than a
-        # pipe: awk exits at the first match, and a `git show |` feeding it would take
-        # SIGPIPE on any lockfile bigger than the pipe buffer, which `pipefail` would
-        # then raise as a failure of the whole check.
-        field() {
-          awk -v k="$1" '$0 ~ "^" k "[ \t]*=" {
-            v = $0
-            sub("^" k "[ \t]*=[ \t]*", "", v)
-            sub(/[^0-9].*$/, "", v)
-            print v
-            exit
-          }' "$2" 2>/dev/null
-        }
-
-        # Absent on the first commit of a repository, and on any event whose checkout is a
-        # single commit. The floor still applies; only the ratchet needs a before.
-        base=""
-        if git rev-parse --verify --quiet 'HEAD^1' >/dev/null 2>&1; then
-          base="$(git rev-parse 'HEAD^1')"
-        fi
-
-        status=0
-        count=0
-        while IFS= read -r -d '' lock; do
-          count=$((count + 1))
-          if [ ! -f "$lock" ]; then
-            echo "::error file=$lock::tracked by git but missing from the checkout"
-            status=1
-            continue
-          fi
-
-          version="$(field version "$lock")"
-          if [ "${version:-absent}" != "$EXPECTED_VERSION" ]; then
-            echo "::error file=$lock::lockfile version is ${version:-absent}, expected ${EXPECTED_VERSION}. The version is uv's backwards-incompatible tier, so moving it is a migration: make it deliberately and set expected-version in the same pull request."
-            status=1
-          fi
-
-          actual="$(field revision "$lock")"
-          if [ -z "$actual" ]; then
-            echo "::error file=$lock::lockfile revision is absent, expected at least ${EXPECTED_REVISION}."
-            status=1
-            continue
-          fi
-
-          if [ "$actual" -lt "$EXPECTED_REVISION" ]; then
-            echo "::error file=$lock::lockfile revision is ${actual}, below the floor of ${EXPECTED_REVISION}. A uv that re-resolves (uv add, uv lock --upgrade) rewrites this; re-lock with a uv new enough to write ${EXPECTED_REVISION}."
-            status=1
-            continue
-          fi
-
-          if [ -n "$base" ] && git cat-file -e "${base}:${lock}" 2>/dev/null; then
-            was="$(field revision <(git show "${base}:${lock}"))"
-            if [ -n "$was" ] && [ "$actual" -lt "$was" ]; then
-              echo "::error file=$lock::lockfile revision fell from ${was} to ${actual}. An older uv re-resolved this and wrote it back without the fields revision ${was} carried; re-lock with a current uv."
-              status=1
-              continue
-            fi
-          fi
-
-          if [ "$actual" -gt "$EXPECTED_REVISION" ]; then
-            echo "::notice file=$lock::lockfile revision is ${actual}, above the floor of ${EXPECTED_REVISION}. Raising expected-revision to ${actual} would hold the gain."
-          fi
-        done < <(git ls-files -z '*uv.lock')
-
-        if [ "$count" -eq 0 ]; then
-          echo "::error::no uv.lock found, so this action does not belong in this repository"
-          status=1
-        fi
-        # Name the base, or say plainly that there was none: a run where the ratchet never
-        # had a before to compare against otherwise reads exactly like one where it passed.
-        if [ -n "$base" ]; then
-          echo "checked ${count} lockfile(s) against floor ${EXPECTED_REVISION} and base ${base:0:7}"
-        else
-          echo "checked ${count} lockfile(s) against floor ${EXPECTED_REVISION}; no parent commit in this checkout, so the ratchet did not run"
-        fi
-        exit "$status"
+      # The runner's own python3, so the check still installs nothing. check.py reads the
+      # lockfile as TOML rather than scanning it: a scanner has to decide what `1_0` and a
+      # `version` under some `[[package]]` mean, and a parser already knows.
+      run: python3 "$GITHUB_ACTION_PATH/check.py"

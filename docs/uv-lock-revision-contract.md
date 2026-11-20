@@ -113,7 +113,11 @@ instead of in every adopting repository.
 ### 3.3 The action
 
 7. The only action it uses is `actions/checkout`, and no step invokes `uv`. The check reads
-   the file; it must not be able to relock anything.
+   the file; it must not be able to relock anything. The reading is done by `check.py`,
+   run with the runner's own `python3` and parsing the lockfile with `tomllib` from the
+   standard library, so nothing is installed. A parser rather than a scan: `1_0` is ten,
+   `0x10` is sixteen, and a `version` under a `[[package]]` is that package's, none of
+   which a search for the first line starting `version =` gets right.
 8. `actions/checkout` sets `persist-credentials: false` and `fetch-depth: 2`, in every
    repository -- no step runs a `git` command that reaches the network. The depth is what
    lets item 14 read the base out of the checkout instead of fetching it; a fetch would
@@ -141,8 +145,9 @@ instead of in every adopting repository.
     request merely *behind* a base that moved forward does not trip the ratchet.
 15. Where there is no base -- a single-commit checkout, a root commit, a lockfile the change
     adds, a path it renamed -- the check falls back to the floor alone and **says so in its
-    summary line**. A floor-only run is never reported as a full one, and a missing base
-    never fails a pull request that is otherwise fine.
+    summary line**, counting how many lockfiles it compared and how many it did not. A
+    floor-only run is never reported as a full one, whether that is the whole run or one
+    file of several, and a missing base never fails a pull request that is otherwise fine.
 16. A revision **rising** is not a failure. A lockfile above the floor draws a `::notice`
     and the job stays green. `version` is the exception: it is uv's backwards-incompatible
     tier, so it is asserted exactly against `expected-version` and moving it is a migration.
@@ -206,9 +211,12 @@ diff. That annotation is the reviewable moment, and it no longer costs a red che
 `expected-revision` afterwards is bookkeeping: do it once every `uv.lock` in the repository
 has reached the new revision, and the floor then narrows what a stale uv can write.
 
-The act that needs justifying in a diff is **lowering** the floor, which is the only
-legitimate route to a downgrade. Until someone does that, the ratchet means a format move
-cannot be quietly undone even in the window before the floor catches up.
+**The ratchet has no in-band override.** Lowering `expected-revision` lowers the floor; it
+does not license a downgrade, and a pull request that lowers both the floor and a lockfile
+still fails. That is deliberate: a downgrade is the one thing this check exists to stop, so
+an input that waves it through would be an input whose only purpose is to defeat the check,
+left behind in the workflow afterwards. A repository that genuinely has to go backwards
+removes or skips the check for that one merge, visibly, and puts it back.
 
 `version` is the other way round. It is backwards-incompatible, so moving it is a migration:
 relock and set `expected-version` in the same pull request. Nothing automated updates that
@@ -224,6 +232,13 @@ indifferent to it.
 It does not stop a repository drifting forward, deliberately -- that is a compatible
 extension, and blocking it was what turned two dozen Renovate pull requests red.
 
-It does not look past `HEAD^1`. A downgrade that already landed on the base branch *is* the
-base, and only the floor will catch it. Nor does it follow a rename: a lockfile moved to a
-new path has no base copy there, and is held to the floor alone.
+It does not look past `HEAD^1`, which has a consequence on pushes worth naming. On a pull
+request that parent is the base branch tip, so the ratchet sees the whole change. On a push
+it is the previous commit, so a push of several commits at once is compared only against
+the first of them: a two-commit push that lowers a revision in both is compared 3 against 3
+and passes. The pull request is the gate and is correct; the push run is a backstop, and a
+multi-commit push straight to the default branch is already outside the review model.
+
+A downgrade that already landed on the base branch *is* the base, and only the floor will
+catch it. Nor does the ratchet follow a rename: a lockfile moved to a new path has no base
+copy there, and is held to the floor alone.

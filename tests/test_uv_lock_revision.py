@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -44,8 +45,24 @@ def action_steps() -> list[dict]:
     return runs["steps"]
 
 
+CHECK = ROOT / "actions" / "uv-lock-revision" / "check.py"
+
+
 def check_script() -> str:
-    return next(step for step in action_steps() if step.get("id") == "revision")["run"]
+    """The script the action runs, read from the file the action ships."""
+    return CHECK.read_text()
+
+
+def run_script(tmp_path: Path, env: dict[str, str]):
+    """Run check.py against a repository, as the action's step does."""
+    return subprocess.run(
+        [sys.executable, str(CHECK)],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        env={**os.environ, **env},
+        check=False,
+    )
 
 
 # --- The action --------------------------------------------------------------------------
@@ -115,6 +132,7 @@ def test_action_needs_no_toolchain() -> None:
     assert actions == ["actions/checkout"]
     for line in check_script().splitlines():
         assert not line.strip().startswith(("uv ", "uvx ", "pip ")), line
+    assert "import tomllib" in check_script(), "the parser is stdlib, so nothing is installed"
 
 
 def test_action_grants_itself_nothing() -> None:
@@ -266,17 +284,8 @@ def run_check(
             body += f"revision = {revision}\n"
         path.write_text(body)
     subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
-    return subprocess.run(
-        ["bash", "-c", check_script()],
-        cwd=tmp_path,
-        capture_output=True,
-        text=True,
-        env={
-            **os.environ,
-            "EXPECTED_REVISION": expected,
-            "EXPECTED_VERSION": expected_version,
-        },
-        check=False,
+    return run_script(
+        tmp_path, {"EXPECTED_REVISION": expected, "EXPECTED_VERSION": expected_version}
     )
 
 
@@ -298,12 +307,21 @@ def test_fails_when_a_lockfile_is_below_the_floor(tmp_path: Path) -> None:
     assert "revision is 3, below the floor of 5" in result.stdout
 
 
+def assert_blames_only(result, offender: str, *innocent: str) -> None:
+    """One offender annotated, the rest not mentioned at all.
+
+    Shared by the floor and ratchet cases so the two cannot drift on what "only this
+    file" means; each still sets up its own scenario.
+    """
+    assert result.returncode == 1
+    assert f"::error file={offender}::" in result.stdout
+    for other in innocent:
+        assert other not in result.stdout, other
+
+
 def test_fails_on_the_one_drifted_lockfile_of_several(tmp_path: Path) -> None:
     result = run_check(tmp_path, {"a/uv.lock": 5, "b/uv.lock": 3, "c/uv.lock": 5})
-    assert result.returncode == 1
-    assert "::error file=b/uv.lock::" in result.stdout
-    assert "a/uv.lock" not in result.stdout
-    assert "c/uv.lock" not in result.stdout
+    assert_blames_only(result, "b/uv.lock", "a/uv.lock", "c/uv.lock")
 
 
 def test_fails_when_the_revision_key_is_absent(tmp_path: Path) -> None:
@@ -327,14 +345,7 @@ def run_raw(tmp_path: Path, body: bytes, expected: str = "5", unlink: bool = Fal
     subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
     if unlink:
         lock.unlink()
-    return subprocess.run(
-        ["bash", "-c", check_script()],
-        cwd=tmp_path,
-        capture_output=True,
-        text=True,
-        env={**os.environ, "EXPECTED_REVISION": expected, "EXPECTED_VERSION": "1"},
-        check=False,
-    )
+    return run_script(tmp_path, {"EXPECTED_REVISION": expected, "EXPECTED_VERSION": "1"})
 
 
 @pytest.mark.parametrize(
@@ -440,14 +451,7 @@ def run_ratchet(
             check=True,
             env=env,
         )
-    return subprocess.run(
-        ["bash", "-c", check_script()],
-        cwd=tmp_path,
-        capture_output=True,
-        text=True,
-        env={**env, "EXPECTED_REVISION": expected, "EXPECTED_VERSION": "1"},
-        check=False,
-    )
+    return run_script(tmp_path, {"EXPECTED_REVISION": expected, "EXPECTED_VERSION": "1"})
 
 
 def test_fails_when_an_older_uv_lowered_the_revision(tmp_path: Path) -> None:
@@ -485,10 +489,7 @@ def test_names_only_the_lockfile_that_fell(tmp_path: Path) -> None:
         {"a/uv.lock": 5, "b/uv.lock": 5, "c/uv.lock": 5},
         {"a/uv.lock": 5, "b/uv.lock": 3, "c/uv.lock": 5},
     )
-    assert result.returncode == 1
-    assert "::error file=b/uv.lock::" in result.stdout
-    assert "::error file=a/uv.lock::" not in result.stdout
-    assert "::error file=c/uv.lock::" not in result.stdout
+    assert_blames_only(result, "b/uv.lock", "::error file=a/uv.lock::", "::error file=c/uv.lock::")
 
 
 def test_a_lockfile_the_head_commit_adds_has_nothing_to_have_fallen_from(
@@ -550,12 +551,11 @@ def test_the_script_reaches_no_network() -> None:
         assert not re.search(reaching, script), reaching
 
 
-def test_reads_the_base_copy_of_a_lockfile_too_large_to_fit_a_pipe(tmp_path: Path) -> None:
-    """Regression: `git show | awk` dies of SIGPIPE once the lockfile outgrows the buffer.
+def test_reads_the_base_copy_of_a_very_large_lockfile(tmp_path: Path) -> None:
+    """The real lockfiles are hundreds of kilobytes; the fixtures above are two lines.
 
-    awk exits at the first match, so git is still writing when the reader goes away. Under
-    `pipefail` that surfaces as 141 and takes the whole check down -- and only in the
-    repositories with the biggest lockfiles, which the small fixtures above never reach.
+    Reading the base copy is where size has bitten before, so the biggest repositories
+    get a case of their own rather than being covered only by the small ones.
     """
     env = {**os.environ, **COMMIT_ENV}
     filler = "".join(f"# filler {n}\n" for n in range(200_000))
@@ -570,13 +570,70 @@ def test_reads_the_base_copy_of_a_lockfile_too_large_to_fit_a_pipe(tmp_path: Pat
             env=env,
         )
     assert (tmp_path / "uv.lock").stat().st_size > 1_000_000, "the fixture must outgrow a pipe"
-    result = subprocess.run(
-        ["bash", "-c", check_script()],
-        cwd=tmp_path,
-        capture_output=True,
-        text=True,
-        env={**env, "EXPECTED_REVISION": "3", "EXPECTED_VERSION": "1"},
-        check=False,
-    )
+    result = run_script(tmp_path, {"EXPECTED_REVISION": "3", "EXPECTED_VERSION": "1"})
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "and base " in result.stdout, "the ratchet ran rather than dying on the way"
+    assert "also against" in result.stdout, "the ratchet ran rather than dying on the way"
+
+
+# --- Reading the lockfile structurally ---------------------------------------------------
+
+
+def write_lock(tmp_path: Path, body: str, name: str = "uv.lock") -> None:
+    (tmp_path / name).write_text(body)
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+
+
+@pytest.mark.parametrize(
+    ("literal", "value"),
+    [
+        pytest.param("1_0", 10, id="digit-separators"),
+        pytest.param("0x10", 16, id="hexadecimal"),
+        pytest.param("0b11", 3, id="binary"),
+    ],
+)
+def test_a_version_is_read_as_toml_means_it_not_as_its_leading_digits(
+    tmp_path: Path, literal: str, value: int
+) -> None:
+    """TOML's integer forms, which a scan for leading digits reads as 1, 0 and 0.
+
+    uv writes canonical decimals, so this is not a lockfile anyone has. It is the class of
+    question a parser answers and a scanner has to be told about one form at a time.
+    """
+    write_lock(tmp_path, f"version = {literal}\nrevision = 5\n")
+    result = run_script(tmp_path, {"EXPECTED_REVISION": "3", "EXPECTED_VERSION": "1"})
+    assert result.returncode == 1
+    assert f"lockfile version is {value}, expected 1" in result.stdout
+
+
+def test_a_package_version_cannot_stand_in_for_the_root_one(tmp_path: Path) -> None:
+    """`version` under a `[[package]]` is that package's, and says nothing about the format."""
+    write_lock(tmp_path, 'revision = 5\n\n[[package]]\nname = "x"\nversion = "1"\n')
+    result = run_script(tmp_path, {"EXPECTED_REVISION": "3", "EXPECTED_VERSION": "1"})
+    assert result.returncode == 1
+    assert "root `version` is None" in result.stdout
+
+
+def test_rejects_a_version_that_is_not_an_integer(tmp_path: Path) -> None:
+    write_lock(tmp_path, 'version = "1"\nrevision = 5\n')
+    result = run_script(tmp_path, {"EXPECTED_REVISION": "3", "EXPECTED_VERSION": "1"})
+    assert result.returncode == 1
+    assert "not a lockfile version" in result.stdout
+
+
+def test_annotates_a_lockfile_that_is_not_readable_as_toml(tmp_path: Path) -> None:
+    """A parse failure is this lockfile's problem, not a crash of the whole check."""
+    write_lock(tmp_path, "version = 1\nrevision = [unclosed\n")
+    result = run_script(tmp_path, {"EXPECTED_REVISION": "3", "EXPECTED_VERSION": "1"})
+    assert result.returncode == 1
+    assert "::error file=uv.lock::" in result.stdout
+    assert "not readable as TOML" in result.stdout
+    assert "Traceback" not in result.stderr
+
+
+def test_the_summary_distinguishes_a_partial_ratchet_from_a_whole_one(tmp_path: Path) -> None:
+    """A lockfile the change adds has no base copy, and the summary has to own up to it."""
+    result = run_ratchet(tmp_path, {"a/uv.lock": 5}, {"a/uv.lock": 5, "b/uv.lock": 5})
+    assert result.returncode == 0, result.stdout
+    assert "1 of them also against" in result.stdout
+    assert "the other 1 against the floor alone" in result.stdout
