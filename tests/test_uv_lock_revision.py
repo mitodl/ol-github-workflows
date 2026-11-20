@@ -637,3 +637,37 @@ def test_the_summary_distinguishes_a_partial_ratchet_from_a_whole_one(tmp_path: 
     assert result.returncode == 0, result.stdout
     assert "1 of them also against" in result.stdout
     assert "the other 1 against the floor alone" in result.stdout
+
+
+def test_refuses_a_lockfile_that_is_not_a_regular_file(tmp_path: Path) -> None:
+    """A tracked `uv.lock` can be a symlink, and a symlink can point at a device.
+
+    /dev/null stands in for /dev/zero here: the same character-device path, without a
+    fixture that hangs the suite for as long as the guard is missing.
+    """
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=tmp_path, check=True)
+    (tmp_path / "uv.lock").symlink_to("/dev/null")
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    result = run_script(tmp_path, {"EXPECTED_REVISION": "3", "EXPECTED_VERSION": "1"})
+    assert result.returncode == 1
+    assert "::error file=uv.lock::tracked by git but not a regular file" in result.stdout
+    assert "Traceback" not in result.stderr
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        pytest.param("²", id="superscript-two"),
+        pytest.param("٣", id="arabic-indic-three"),
+    ],
+)
+def test_rejects_a_non_ascii_digit_as_an_input(tmp_path: Path, value: str) -> None:
+    """`str.isdigit()` alone is true of both, and int() raises on one and reads the other.
+
+    A traceback and a silently misread floor are both worse than the clean error this
+    field already produces for every other wrong value.
+    """
+    result = run_check(tmp_path, {"uv.lock": 5}, expected=value)
+    assert result.returncode == 1
+    assert "not a revision number" in result.stdout
+    assert "Traceback" not in result.stderr

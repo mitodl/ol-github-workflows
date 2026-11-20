@@ -86,7 +86,10 @@ def expected(name: str, noun: str) -> int:
     here as an empty string -- an empty floor, which would admit any revision at all.
     """
     raw = os.environ.get(name, "")
-    if not raw.isdigit():
+    # ASCII as well as digits. `str.isdigit()` is true of "\u00b2" and "\u0663", and int()
+    # then raises on the first and quietly returns 3 for the second -- a traceback and a
+    # silently misread input, from a field that only ever holds a small decimal.
+    if not (raw.isascii() and raw.isdigit()):
         annotate("error", f"{name.lower().replace('_', '-')} is {raw!r}, not a {noun}.")
         raise SystemExit(1)
     return int(raw)
@@ -117,11 +120,19 @@ def main() -> int:
     compared = 0
 
     for lock in locks:
+        # isfile() follows the symlink and is false for a device or a directory, as the
+        # shell's `[ -f ]` was: reading a lockfile symlinked to /dev/zero never reaches EOF.
+        if not os.path.isfile(lock):
+            missing = "not a regular file" if os.path.lexists(lock) else "missing from the checkout"
+            annotate("error", f"tracked by git but {missing}", lock)
+            status = 1
+            continue
+
         try:
             with open(lock, "rb") as handle:
                 raw = handle.read()
-        except FileNotFoundError:
-            annotate("error", "tracked by git but missing from the checkout", lock)
+        except OSError as err:
+            annotate("error", f"could not be read: {err.strerror}", lock)
             status = 1
             continue
 
